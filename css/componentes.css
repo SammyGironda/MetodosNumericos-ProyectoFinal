@@ -602,3 +602,194 @@
     transform: translateX(0) !important;
   }
 }
+
+/* ============================================================
+   PANTALLA DE INICIO
+   Agrega esto al final de css/componentes.css
+   ============================================================ */
+
+/* --- Hero --- */
+.inicio__hero {
+  text-align: center;
+  padding: var(--spacing-10) var(--spacing-4);
+  background: linear-gradient(
+    160deg,
+    var(--color-primary) 0%,
+    var(--color-secondary) 100%
+  );
+  border-radius: var(--border-radius-lg);
+  color: #fff;
+  margin-bottom: var(--spacing-8);
+}
+
+.inicio__hero-badge {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: var(--border-radius-full, 999px);
+  padding: var(--spacing-1) var(--spacing-4);
+  font-size: var(--font-size-sm);
+  letter-spacing: 0.04em;
+  margin-bottom: var(--spacing-4);
+}
+
+.inicio__titulo {
+  font-size: clamp(2rem, 5vw, 3rem);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.15;
+  margin-bottom: var(--spacing-4);
+  color: #fff;
+}
+
+.inicio__titulo-accent {
+  color: var(--color-accent-warm);
+}
+
+.inicio__subtitulo {
+  max-width: 640px;
+  margin: 0 auto var(--spacing-6);
+  font-size: var(--font-size-lg);
+  opacity: 0.92;
+  line-height: var(--line-height-relaxed);
+}
+
+.inicio__hero-acciones {
+  display: flex;
+  gap: var(--spacing-3);
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* Botones sobre fondo oscuro */
+.inicio__hero .btn--secondary {
+  border-color: rgba(255, 255, 255, 0.6);
+  color: #fff;
+}
+
+.inicio__hero .btn--secondary:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* --- Meta académico --- */
+.inicio__meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.inicio__meta-label {
+  font-size: var(--font-size-xs, 0.75rem);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-muted, #888);
+  font-weight: var(--font-weight-semibold);
+}
+
+.inicio__meta-valor {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+/* --- Secciones internas --- */
+.inicio__seccion {
+  margin-bottom: var(--spacing-10);
+}
+
+.inicio__seccion-titulo {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-primary);
+  margin-bottom: var(--spacing-2);
+  padding-bottom: var(--spacing-2);
+  border-bottom: 2px solid var(--color-secondary);
+}
+
+.inicio__seccion-descripcion {
+  color: var(--color-text-muted, #666);
+  margin-bottom: var(--spacing-6);
+  max-width: 680px;
+}
+
+/* --- Grid de escenarios --- */
+.inicio__grid-escenarios {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--spacing-4);
+}
+
+/* --- Tarjeta individual --- */
+.inicio__card-escenario {
+  display: flex;
+  flex-direction: column;
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
+}
+
+.inicio__card-escenario:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
+}
+
+.inicio__card-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-2);
+}
+
+.inicio__card-letra {
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
+}
+
+.inicio__card-metodo {
+  display: inline-block;
+  font-size: var(--font-size-xs, 0.72rem);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-text-muted, #888);
+  font-weight: var(--font-weight-semibold);
+  margin-top: var(--spacing-1);
+}
+
+.inicio__card-descripcion {
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-relaxed);
+  color: var(--color-text-secondary, #555);
+  margin-bottom: var(--spacing-3);
+}
+
+/* card__footer al final (flex-grow en body) */
+.inicio__card-escenario .card__body {
+  flex: 1;
+}
+
+/* --- CTA final --- */
+.inicio__cta {
+  text-align: center;
+  padding: var(--spacing-10) var(--spacing-4);
+  border-top: 1px solid var(--color-neutral-200, #e5e7eb);
+  margin-top: var(--spacing-8);
+}
+
+.inicio__cta-texto {
+  font-size: var(--font-size-lg);
+  color: var(--color-text-muted, #666);
+  margin-bottom: var(--spacing-4);
+}
+
+/* --- Responsivo --- */
+@media (max-width: 480px) {
+  .inicio__hero {
+    padding: var(--spacing-6) var(--spacing-3);
+  }
+
+  .inicio__grid-escenarios {
+    grid-template-columns: 1fr;
+  }
+
+  .inicio__hero-acciones {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

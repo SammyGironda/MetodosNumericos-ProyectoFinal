@@ -29,6 +29,7 @@ const RUTAS = {
 
 /** Mapeo de ruta → archivo JS del escenario (carga dinámica) */
 const MODULOS_ESCENARIO = {
+  '#inicio':      'js/escenarios/inicio.js',
   '#escenario-a': 'js/escenarios/escenarioA.js',
   '#escenario-b': 'js/escenarios/escenarioB.js',
   '#escenario-c': 'js/escenarios/escenarioC.js',
@@ -266,45 +267,8 @@ function cerrarSidebar() {
  * @returns {string}
  */
 function vistaInicio() {
-  return `
-    <section class="seccion-contenido" id="vista-inicio" aria-labelledby="titulo-inicio">
-      <div class="seccion-contenido__header">
-        <h1 id="titulo-inicio">🔢 Simulación Numérica de Crisis</h1>
-        <p class="seccion-contenido__subtitulo">
-          Métodos Numéricos Aplicados a Problemas Reales
-        </p>
-      </div>
-
-      <div class="card card--info" style="margin-bottom: var(--spacing-6);">
-        <div class="card__body">
-          <p>
-            Esta plataforma simula <strong>7 escenarios de crisis</strong> usando métodos
-            numéricos: sistemas lineales, raíces de ecuaciones, interpolación,
-            integración y ecuaciones diferenciales.
-          </p>
-        </div>
-      </div>
-
-      <div class="grid grid--auto" role="list">
-        ${Object.entries(RUTAS)
-          .filter(([hash]) => hash.startsWith('#escenario'))
-          .map(([hash, cfg]) => `
-            <div class="card" role="listitem">
-              <div class="card__header">
-                <h2 class="card__title">
-                  <span aria-hidden="true">${cfg.icono}</span> ${cfg.titulo}
-                </h2>
-              </div>
-              <div class="card__footer">
-                <a href="${hash}" class="btn btn--primary btn--full-width">
-                  Ver escenario
-                </a>
-              </div>
-            </div>
-          `).join('')}
-      </div>
-    </section>
-  `;
+  setTimeout(() => renderizarInicio(), 0);
+  return '';
 }
 
 /**
@@ -426,8 +390,15 @@ async function navegar(ruta) {
     let html = '';
 
     if (ruta === '#inicio') {
-      html = vistaInicio();
-
+      try {
+        await cargarScript('js/escenarios/inicio.js');
+        if (typeof renderizarInicio === 'function') {
+          renderizarInicio();
+          return; // renderizarInicio ya inyecta el HTML directamente
+        }
+      } catch {
+        html = vistaInicio(); // fallback al HTML básico
+      }
     } else if (ruta === '#conclusiones') {
       html = vistaConclusiones();
 
