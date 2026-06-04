@@ -511,3 +511,6 @@ if (document.readyState === 'loading') {
 } else {
   iniciarApp();
 }
+function navegarA(id) {
+  window.location.hash = '#' + id;
+}

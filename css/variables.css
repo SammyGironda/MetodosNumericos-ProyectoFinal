@@ -85,4 +85,10 @@
   --opacity-disabled: 0.5;
   --opacity-hover: 0.85;
   --opacity-focus: 0.9;
+
+  --font-size-xs: 12px;
+  --font-weight-medium: 500;
+  --line-height-relaxed: 1.8;
+  --border-radius-full: 999px;
+  --transition-base: var(--transition-normal);
 }
