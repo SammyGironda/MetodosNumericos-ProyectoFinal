@@ -1,0 +1,438 @@
+/* ===== MOBILE PEQUEÑO (< 480px) ===== */
+
+/* Contenedor principal */
+.app__container {
+  flex-direction: column;
+}
+
+.app__main {
+  padding: var(--spacing-md);
+}
+
+/* Tipografía reducida */
+h1 {
+  font-size: 24px;
+  margin-bottom: var(--spacing-sm);
+}
+
+h2 {
+  font-size: 20px;
+  margin: var(--spacing-md) 0 var(--spacing-sm) 0;
+}
+
+h3 {
+  font-size: 18px;
+}
+
+p {
+  line-height: 1.5;
+}
+
+/* Botones */
+.btn {
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-xs) var(--spacing-md);
+}
+
+.btn--large {
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-base);
+}
+
+/* Cards */
+.card {
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.card__header {
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+/* Formularios */
+.form-group {
+  margin-bottom: var(--spacing-md);
+}
+
+.form-row,
+.form-row--2-col,
+.form-row--3-col {
+  grid-template-columns: 1fr;
+}
+
+.form-input {
+  padding: var(--spacing-sm);
+  font-size: 16px;
+}
+
+/* Tablas */
+.table {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table table {
+  font-size: var(--font-size-sm);
+}
+
+.table thead th,
+.table tbody td {
+  padding: var(--spacing-sm);
+}
+
+/* Grid */
+.grid,
+.grid--2-col,
+.grid--3-col {
+  grid-template-columns: 1fr;
+}
+
+.gap--lg {
+  gap: var(--spacing-md);
+}
+
+/* Gráficos */
+.grafico-container canvas {
+  max-height: 250px;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 100%;
+  max-width: 280px;
+}
+
+.sidebar__link {
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-sm);
+}
+
+.hamburger {
+  display: block;
+  padding: var(--spacing-sm);
+}
+
+/* ===== MOBILE GRANDE (480px - 767px) ===== */
+@media (min-width: 480px) {
+  /* Tipografía */
+  h1 {
+    font-size: 28px;
+  }
+
+  h2 {
+    font-size: 22px;
+  }
+
+  /* Formularios */
+  .form-row {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+
+  .form-row--2-col {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-md);
+  }
+
+  /* Cards */
+  .card {
+    padding: var(--spacing-lg);
+  }
+
+  /* Tablas */
+  .table table {
+    font-size: var(--font-size-base);
+  }
+
+  .table thead th,
+  .table tbody td {
+    padding: var(--spacing-md);
+  }
+
+  /* Gráficos */
+  .grafico-container canvas {
+    max-height: 300px;
+  }
+
+  /* Grid */
+  .grid--auto {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+}
+
+/* ===== TABLET (768px - 1023px) ===== */
+@media (min-width: 768px) {
+  /* Contenedor */
+  .app__container {
+    flex-direction: row;
+  }
+
+  .app__main {
+    padding: var(--spacing-lg);
+  }
+
+  /* Sidebar visible como columna fija */
+  .sidebar {
+    position: static;
+    width: 250px;
+    flex-shrink: 0;
+    display: block;
+    left: auto;
+    transform: none;
+  }
+
+  .hamburger {
+    display: none;
+  }
+
+  .sidebar-backdrop {
+    display: none;
+  }
+
+  /* Tipografía */
+  h1 {
+    font-size: 32px;
+  }
+
+  h2 {
+    font-size: 24px;
+  }
+
+  /* Formularios */
+  .form-row--3-col {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  /* Grid */
+  .grid--2-col {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .grid--3-col {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  /* Gráficos */
+  .grafico-container canvas {
+    max-height: 350px;
+  }
+
+  /* Cards de escenario en 2 columnas */
+  .escenario__contenido {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ===== LAPTOP (1024px - 1279px) ===== */
+@media (min-width: 1024px) {
+  /* Layout expandido */
+  .app__main {
+    padding: var(--spacing-xl);
+  }
+
+  /* Botones */
+  .btn--full-width {
+    width: auto;
+  }
+
+  /* Formularios */
+  .form-row--3-col {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  /* Grid */
+  .grid--auto {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  }
+
+  /* Escenarios */
+  .escenario__contenido {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Gráficos */
+  .grafico-container canvas {
+    max-height: 400px;
+  }
+}
+
+/* ===== DESKTOP (>= 1280px) ===== */
+@media (min-width: 1280px) {
+  /* Layout óptimo */
+  .app__container {
+    height: 100vh;
+  }
+
+  .app__main {
+    padding: var(--spacing-xl);
+    overflow-y: auto;
+  }
+
+  .sidebar {
+    width: 250px;
+  }
+
+  /* Tipografía */
+  p {
+    line-height: 1.6;
+  }
+
+  /* Tablas */
+  .table table {
+    font-size: var(--font-size-base);
+  }
+
+  /* Gráficos */
+  .grafico-container canvas {
+    max-height: 450px;
+  }
+
+  /* Grid de 3 columnas */
+  .grid--3-col {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* ===== AJUSTES ESPECIALES POR COMPONENTE ===== */
+
+/* Formularios en mobile */
+@media (max-width: 767px) {
+  .form-group--inline {
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+
+  .form-button-group {
+    flex-direction: column;
+    justify-content: stretch;
+  }
+
+  .form-button-group .btn {
+    width: 100%;
+  }
+}
+
+/* Tablas con scroll horizontal en mobile */
+@media (max-width: 767px) {
+  .table {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .table table {
+    min-width: 500px;
+  }
+
+  .table thead th,
+  .table tbody td {
+    padding: var(--spacing-sm);
+    font-size: var(--font-size-sm);
+  }
+}
+
+/* Alertas apiladas en mobile */
+@media (max-width: 767px) {
+  .alert {
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+}
+
+/* Gráficos compactos en mobile */
+@media (max-width: 767px) {
+  .grafico-container {
+    padding: var(--spacing-md);
+  }
+
+  .grafico-container canvas {
+    max-height: 250px;
+  }
+}
+
+/* Sidebar links en mobile */
+@media (max-width: 767px) {
+  .sidebar__link {
+    font-size: var(--font-size-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+}
+
+/* Cards apiladas en mobile */
+@media (max-width: 767px) {
+  .card {
+    margin-bottom: var(--spacing-md);
+    padding: var(--spacing-md);
+  }
+
+  .card__footer {
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+
+  .card__footer .btn {
+    width: 100%;
+  }
+}
+
+/* Grid de una sola columna en mobile */
+@media (max-width: 767px) {
+  .grid--2-col,
+  .grid--3-col,
+  .grid--auto {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ===== IMPRESIÓN ===== */
+@media print {
+  /* Ocultar navegación */
+  .sidebar {
+    display: none;
+  }
+
+  .hamburger {
+    display: none;
+  }
+
+  .sidebar-backdrop {
+    display: none;
+  }
+
+  /* Mostrar solo contenido */
+  .app__main {
+    width: 100%;
+    padding: 0;
+  }
+
+  /* Colores para impresión */
+  * {
+    background-color: white !important;
+    color: black !important;
+  }
+
+  /* Tablas visibles sin cortes */
+  table {
+    page-break-inside: avoid;
+  }
+
+  /* Gráficos en tamaño imprimible */
+  .grafico-container canvas {
+    max-height: 600px;
+    page-break-inside: avoid;
+  }
+}
+
+/* ===== PREFERENCIAS DE USUARIO ===== */
+
+/* Modo oscuro - no implementado, el proyecto usa colores claros */
+@media (prefers-color-scheme: dark) {
+  /* Reservado para futura implementación */
+}
+
+/* Reducir movimiento para usuarios con sensibilidad */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
