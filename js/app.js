@@ -37,6 +37,7 @@ const MODULOS_ESCENARIO = {
   '#escenario-e': 'js/escenarios/escenarioE.js',
   '#escenario-f': 'js/escenarios/escenarioF.js',
   '#escenario-g': 'js/escenarios/escenarioG.js',
+  '#conclusiones': 'js/escenarios/conclusiones.js',
 };
 
 /** Registro de módulos ya cargados para no repetir imports */
@@ -276,19 +277,8 @@ function vistaInicio() {
  * @returns {string}
  */
 function vistaConclusiones() {
-  return `
-    <section class="seccion-contenido" id="vista-conclusiones" aria-labelledby="titulo-conclusiones">
-      <div class="seccion-contenido__header">
-        <h1 id="titulo-conclusiones">📝 Conclusiones</h1>
-        <p class="seccion-contenido__subtitulo">Reflexión final del proyecto</p>
-      </div>
-      <div class="card">
-        <div class="card__body">
-          <p>Las conclusiones se completarán al finalizar todos los escenarios.</p>
-        </div>
-      </div>
-    </section>
-  `;
+  setTimeout(() => renderizarConclusiones(), 0);
+  return '';
 }
 
 /**
@@ -400,7 +390,15 @@ async function navegar(ruta) {
         html = vistaInicio(); // fallback al HTML básico
       }
     } else if (ruta === '#conclusiones') {
-      html = vistaConclusiones();
+      try {
+        await cargarScript('js/escenarios/conclusiones.js');
+        if (typeof renderizarConclusiones === 'function') {
+          renderizarConclusiones();
+          return;
+        }
+      } catch {
+        html = vistaConclusiones();
+      }
 
     } else if (ruta.startsWith('#escenario')) {
       // Intentar cargar el módulo del escenario
