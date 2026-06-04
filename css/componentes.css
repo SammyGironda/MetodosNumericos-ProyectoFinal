@@ -549,3 +549,56 @@
 .gap--lg {
   gap: var(--spacing-lg);
 }
+
+/* ── Indicador de carga ── */
+.cargando {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-8);
+  color: var(--color-neutral-500);
+  font-size: var(--font-size-lg);
+}
+
+/* ── Sección de contenido (wrapper de vistas) ── */
+.seccion-contenido {
+  padding: var(--spacing-6);
+  animation: fadeIn var(--transition-normal) ease;
+}
+
+.seccion-contenido__header {
+  margin-bottom: var(--spacing-6);
+}
+
+.seccion-contenido__subtitulo {
+  color: var(--color-neutral-600);
+  font-size: var(--font-size-lg);
+  margin-top: var(--spacing-1);
+}
+
+/* ── Grid automático de cards ── */
+.grid--auto {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--spacing-4);
+}
+
+/* ── Backdrop del sidebar (mobile) ── */
+.sidebar__backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: var(--z-modal-backdrop);
+}
+
+.sidebar__backdrop--visible {
+  display: block;
+}
+
+/* ── Sidebar abierto en mobile ── */
+@media (max-width: 767px) {
+  .sidebar--abierto {
+    transform: translateX(0) !important;
+  }
+}
