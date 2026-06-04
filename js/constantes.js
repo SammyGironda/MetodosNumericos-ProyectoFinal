@@ -186,3 +186,23 @@ window.APP_CONFIG = Object.freeze({
 
 // Alias corto para usar dentro de cada módulo:
 // const CFG = window.APP_CONFIG;
+
+// Al final de constantes.js, después de window.APP_CONFIG = ...
+
+/**
+ * Carga los datos de ejemplo precargados desde data/ejemplos.json
+ * Disponible como window.DATOS_EJEMPLOS tras la carga.
+ */
+async function cargarDatosEjemplos() {
+  try {
+    const respuesta = await fetch('data/ejemplos.json');
+    if (!respuesta.ok) throw new Error('No se pudo cargar ejemplos.json');
+    window.DATOS_EJEMPLOS = await respuesta.json();
+    console.info('✅ Datos de ejemplo cargados correctamente.');
+  } catch (error) {
+    console.warn('⚠️ No se cargaron los datos de ejemplo:', error.message);
+    window.DATOS_EJEMPLOS = null;
+  }
+}
+
+cargarDatosEjemplos();

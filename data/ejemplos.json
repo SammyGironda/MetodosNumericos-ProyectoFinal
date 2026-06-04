@@ -1,0 +1,568 @@
+{
+  "version": "1.0.0",
+  "proyecto": "Simulación Numérica de Crisis - Métodos Numéricos Aplicados",
+  "descripcion": "Datos de ejemplo precargados para los 7 escenarios de simulación",
+  "escenarios": {
+
+    "escenarioA": {
+      "titulo": "Distribución de Abastecimiento",
+      "metodo": "Sistemas Lineales (Gauss-Seidel / LU)",
+      "descripcion": "Sistema de ecuaciones que modela la distribución de suministros entre zonas",
+      "ejemplos": [
+        {
+          "id": "A1",
+          "nombre": "Red de 3 zonas — Crisis alimentaria básica",
+          "descripcion": "Distribución de alimentos entre tres zonas urbanas con oferta limitada central.",
+          "dificultad": "basico",
+          "parametros": {
+            "n": 3,
+            "matriz": [
+              [4, -1,  0],
+              [-1, 4, -1],
+              [0, -1,  4]
+            ],
+            "terminos_independientes": [15, 10, 10],
+            "tolerancia": 1e-6,
+            "max_iteraciones": 100,
+            "metodo": "gauss-seidel"
+          },
+          "solucion_esperada": [4.444, 3.778, 3.444],
+          "interpretacion": "Cada zona recibe aproximadamente 3.4 a 4.5 toneladas diarias de alimento bajo las restricciones de red logística.",
+          "unidades": "toneladas/día"
+        },
+        {
+          "id": "A2",
+          "nombre": "Red de 3 zonas — Distribución de agua potable",
+          "descripcion": "Asignación de agua entre zonas con restricciones de tubería y presión mínima.",
+          "dificultad": "intermedio",
+          "parametros": {
+            "n": 3,
+            "matriz": [
+              [10,  -2,  -1],
+              [-2,   8,  -2],
+              [-1,  -2,   7]
+            ],
+            "terminos_independientes": [27, 14, 12],
+            "tolerancia": 1e-6,
+            "max_iteraciones": 100,
+            "metodo": "gauss-seidel"
+          },
+          "solucion_esperada": [3.438, 3.063, 2.688],
+          "interpretacion": "Las presiones en los tres nodos de distribución alcanzan valores de 3.4, 3.1 y 2.7 unidades respectivamente, dentro del rango seguro.",
+          "unidades": "bar"
+        },
+        {
+          "id": "A3",
+          "nombre": "Red de 4 zonas — Logística de emergencia médica",
+          "descripcion": "Distribución de medicamentos críticos entre cuatro hospitales durante pandemia.",
+          "dificultad": "avanzado",
+          "parametros": {
+            "n": 4,
+            "matriz": [
+              [ 6, -1,  0, -1],
+              [-1,  6, -1,  0],
+              [ 0, -1,  6, -1],
+              [-1,  0, -1,  6]
+            ],
+            "terminos_independientes": [20, 16, 18, 14],
+            "tolerancia": 1e-8,
+            "max_iteraciones": 200,
+            "metodo": "LU"
+          },
+          "solucion_esperada": [4.375, 3.75, 4.125, 3.5],
+          "interpretacion": "Cada hospital recibe entre 3.5 y 4.4 unidades de medicamento por turno. El hospital 1 (mayor demanda) recibe la mayor asignación.",
+          "unidades": "cajas/turno"
+        }
+      ]
+    },
+
+    "escenarioB": {
+      "titulo": "Vaciado de Reservas Críticas",
+      "metodo": "Ecuaciones Diferenciales (RK4 / Euler / Heun)",
+      "descripcion": "Modela el agotamiento de reservas bajo distintas tasas de consumo",
+      "ejemplos": [
+        {
+          "id": "B1",
+          "nombre": "Reserva de agua — consumo lineal",
+          "descripcion": "Tanque de agua con consumo constante y reabastecimiento periódico.",
+          "dificultad": "basico",
+          "parametros": {
+            "y0": 1000,
+            "t0": 0,
+            "tf": 30,
+            "h": 0.5,
+            "metodo": "rk4",
+            "funcion": "consumo_lineal",
+            "tasa_consumo": 30,
+            "tasa_recarga": 5
+          },
+          "descripcion_funcion": "dy/dt = -tasa_consumo + tasa_recarga = -25",
+          "solucion_analitica": "y(t) = 1000 - 25t",
+          "tiempo_agotamiento": 40,
+          "interpretacion": "El tanque se vacía en 40 días al ritmo de 25 m³/día netos. Con RK4 el error respecto a la solución exacta es menor a 10⁻⁸.",
+          "unidades_y": "m³",
+          "unidades_t": "días"
+        },
+        {
+          "id": "B2",
+          "nombre": "Reserva de combustible — consumo exponencial",
+          "descripcion": "Depósito de combustible con demanda creciente exponencialmente por la crisis.",
+          "dificultad": "intermedio",
+          "parametros": {
+            "y0": 5000,
+            "t0": 0,
+            "tf": 20,
+            "h": 0.25,
+            "metodo": "rk4",
+            "funcion": "consumo_exponencial",
+            "tasa_base": 50,
+            "coef_crecimiento": 0.1
+          },
+          "descripcion_funcion": "dy/dt = -(tasa_base * e^(coef * t))",
+          "interpretacion": "La demanda exponencial provoca agotamiento acelerado. Los últimos 20% del combustible se consumen en solo el 8% del tiempo total.",
+          "unidades_y": "litros",
+          "unidades_t": "días"
+        },
+        {
+          "id": "B3",
+          "nombre": "Reserva de alimentos — consumo con pánico",
+          "descripcion": "Almacén de alimentos con pico de consumo al inicio de la crisis (modelo logístico).",
+          "dificultad": "avanzado",
+          "parametros": {
+            "y0": 10000,
+            "t0": 0,
+            "tf": 60,
+            "h": 0.1,
+            "metodo": "rk4",
+            "funcion": "consumo_logistico",
+            "consumo_max": 400,
+            "consumo_min": 80,
+            "punto_inflexion": 5,
+            "pendiente": 1.2
+          },
+          "descripcion_funcion": "dy/dt = -(consumo_max / (1 + e^(pendiente*(t - inflexion)))) - consumo_min",
+          "interpretacion": "El pánico inicial dispara el consumo a 400 kg/día, que decae a ~80 kg/día tras la estabilización. La reserva dura ~42 días.",
+          "unidades_y": "kg",
+          "unidades_t": "días"
+        }
+      ]
+    },
+
+    "escenarioC": {
+      "titulo": "Curva de Precios en Crisis",
+      "metodo": "Interpolación (Lagrange / Splines Cúbicos)",
+      "descripcion": "Reconstruye la evolución de precios a partir de datos históricos dispersos",
+      "ejemplos": [
+        {
+          "id": "C1",
+          "nombre": "Precio del pan — 5 datos semanales",
+          "descripcion": "Registro semanal del precio del pan durante 4 semanas de crisis.",
+          "dificultad": "basico",
+          "parametros": {
+            "puntos_x": [0, 1, 2, 3, 4],
+            "puntos_y": [1.20, 1.45, 1.90, 2.60, 2.85],
+            "x_evaluar": [0.5, 1.5, 2.5, 3.5],
+            "metodo": "lagrange"
+          },
+          "interpretacion": "El precio del pan sube un 137% en 4 semanas. La interpolación permite estimar el precio en días intermedios sin datos de campo.",
+          "unidades": "Bs/kg",
+          "eje_x": "semanas desde inicio de crisis"
+        },
+        {
+          "id": "C2",
+          "nombre": "Precio del combustible — 6 registros",
+          "descripcion": "Evolución del precio de combustible con escasez intermitente.",
+          "dificultad": "intermedio",
+          "parametros": {
+            "puntos_x": [0, 2, 5, 9, 14, 20],
+            "puntos_y": [3.74, 4.20, 5.80, 7.50, 6.90, 8.40],
+            "x_evaluar": [1, 3, 4, 6, 7, 8, 10, 11, 12, 13, 15, 16, 17, 18, 19],
+            "metodo": "splines"
+          },
+          "interpretacion": "La bajada en el día 14 refleja una apertura temporal de importaciones. Los splines capturan este comportamiento sin las oscilaciones que produciría Lagrange.",
+          "unidades": "Bs/litro",
+          "eje_x": "días desde inicio de crisis"
+        },
+        {
+          "id": "C3",
+          "nombre": "Índice de precios — canasta básica",
+          "descripcion": "Índice compuesto de 8 productos básicos durante crisis de dos meses.",
+          "dificultad": "avanzado",
+          "parametros": {
+            "puntos_x": [0, 7, 14, 21, 30, 45, 52, 60],
+            "puntos_y": [100, 108, 121, 145, 162, 155, 178, 195],
+            "x_evaluar": [3, 10, 17, 24, 35, 40, 48, 56],
+            "metodo": "splines",
+            "comparar_metodos": true
+          },
+          "interpretacion": "El índice sube 95% en 60 días con un alivio temporal en el día 45 (intervención gubernamental). Splines y Lagrange divergen significativamente cerca de los extremos para n=8.",
+          "unidades": "índice (base 100)",
+          "eje_x": "días"
+        }
+      ]
+    },
+
+    "escenarioD": {
+      "titulo": "Costo Acumulado de Emergencia",
+      "metodo": "Integración Numérica (Simpson 1/3 / Trapecio)",
+      "descripcion": "Calcula el gasto total acumulado integrando la función de costo continuo",
+      "ejemplos": [
+        {
+          "id": "D1",
+          "nombre": "Costo diario constante — operación básica",
+          "descripcion": "Emergencia con gasto diario fijo durante 30 días.",
+          "dificultad": "basico",
+          "parametros": {
+            "a": 0,
+            "b": 30,
+            "n": 30,
+            "metodo": "simpson",
+            "funcion": "constante",
+            "costo_diario": 50000
+          },
+          "descripcion_funcion": "f(t) = 50000",
+          "solucion_analitica": 1500000,
+          "interpretacion": "Costo total de Bs 1,500,000 en 30 días. Tanto Simpson como Trapecio obtienen el resultado exacto para funciones constantes (error = 0).",
+          "unidades": "Bs"
+        },
+        {
+          "id": "D2",
+          "nombre": "Costo creciente lineal — escalada de crisis",
+          "descripcion": "Los costos operativos crecen linealmente con la duración de la crisis.",
+          "dificultad": "basico",
+          "parametros": {
+            "a": 0,
+            "b": 30,
+            "n": 30,
+            "metodo": "simpson",
+            "funcion": "lineal",
+            "costo_inicial": 20000,
+            "pendiente": 3000
+          },
+          "descripcion_funcion": "f(t) = 20000 + 3000t",
+          "solucion_analitica": 1950000,
+          "interpretacion": "El costo del día 1 es Bs 23,000 y el del día 30 es Bs 110,000. El costo acumulado de Bs 1,950,000 refleja la escalada progresiva.",
+          "unidades": "Bs"
+        },
+        {
+          "id": "D3",
+          "nombre": "Costo con pico de crisis — función gaussiana",
+          "descripcion": "Emergencia con pico de gasto en el punto álgido de la crisis.",
+          "dificultad": "intermedio",
+          "parametros": {
+            "a": 0,
+            "b": 60,
+            "n": 60,
+            "metodo": "simpson",
+            "funcion": "gaussiana",
+            "costo_base": 30000,
+            "amplitud_pico": 200000,
+            "centro_pico": 20,
+            "ancho_pico": 5
+          },
+          "descripcion_funcion": "f(t) = 30000 + 200000 * exp(-((t-20)²)/(2*5²))",
+          "interpretacion": "El pico de crisis (día 20) dispara el gasto diario a Bs 230,000. Simpson 1/3 es más preciso que Trapecio para capturar la campana gaussiana con menos subintervalos.",
+          "unidades": "Bs"
+        },
+        {
+          "id": "D4",
+          "nombre": "Costo periódico — ciclos de abastecimiento",
+          "descripcion": "Gastos con componente oscilatoria por ciclos semanales de reabastecimiento.",
+          "dificultad": "avanzado",
+          "parametros": {
+            "a": 0,
+            "b": 42,
+            "n": 84,
+            "metodo": "comparar",
+            "funcion": "periodica",
+            "costo_base": 60000,
+            "amplitud": 25000,
+            "frecuencia": 0.897
+          },
+          "descripcion_funcion": "f(t) = 60000 + 25000 * sin(2π/7 * t)",
+          "solucion_analitica": 2520000,
+          "interpretacion": "Los ciclos semanales de abastecimiento crean picos cada 7 días. El costo base acumulado es Bs 2,520,000; la componente oscilatoria suma cero al integrar períodos completos.",
+          "unidades": "Bs"
+        }
+      ]
+    },
+
+    "escenarioE": {
+      "titulo": "Umbrales Críticos de Colapso",
+      "metodo": "Raíces de Ecuaciones (Newton-Raphson / Bisección)",
+      "descripcion": "Encuentra el punto exacto donde un sistema entra en estado crítico",
+      "ejemplos": [
+        {
+          "id": "E1",
+          "nombre": "Umbral de desabastecimiento — función lineal",
+          "descripcion": "Punto en que la oferta iguala a la demanda creciente.",
+          "dificultad": "basico",
+          "parametros": {
+            "funcion": "lineal",
+            "a_coef": -2.5,
+            "b_coef": 100,
+            "intervalo": [30, 50],
+            "x0_newton": 40,
+            "tolerancia": 1e-6,
+            "max_iteraciones": 100,
+            "metodo": "biseccion"
+          },
+          "descripcion_funcion": "f(x) = -2.5x + 100",
+          "raiz_esperada": 40.0,
+          "interpretacion": "El desabastecimiento ocurre exactamente en el día 40. Ambos métodos convergen en 1 iteración para funciones lineales.",
+          "unidades_x": "días"
+        },
+        {
+          "id": "E2",
+          "nombre": "Umbral de inflación crítica — función cuadrática",
+          "descripcion": "Nivel de inflación donde el costo de vida supera el ingreso promedio.",
+          "dificultad": "basico",
+          "parametros": {
+            "funcion": "cuadratica",
+            "coeficientes": [1, -8, 12],
+            "intervalo": [2, 5],
+            "x0_newton": 3,
+            "tolerancia": 1e-6,
+            "max_iteraciones": 50,
+            "metodo": "newton"
+          },
+          "descripcion_funcion": "f(x) = x² - 8x + 12",
+          "raiz_esperada": 6.0,
+          "raices": [2.0, 6.0],
+          "interpretacion": "Existen dos umbrales: x=2 (entrada en zona de riesgo) y x=6 (colapso total). Newton-Raphson desde x₀=3 converge a x=2 en 3 iteraciones.",
+          "unidades_x": "% de inflación mensual"
+        },
+        {
+          "id": "E3",
+          "nombre": "Umbral de colapso social — función trascendente",
+          "descripcion": "Punto de quiebre en un modelo de tensión social con componente exponencial.",
+          "dificultad": "intermedio",
+          "parametros": {
+            "funcion": "trascendente_1",
+            "intervalo": [1, 3],
+            "x0_newton": 2.0,
+            "tolerancia": 1e-8,
+            "max_iteraciones": 100,
+            "metodo": "ambos"
+          },
+          "descripcion_funcion": "f(x) = x * e^x - 3",
+          "raiz_esperada": 1.0499,
+          "interpretacion": "La tensión social supera el umbral crítico en x≈1.05. Newton converge en 4 iteraciones; bisección necesita 27 para la misma precisión (1e-8).",
+          "unidades_x": "índice de tensión (adimensional)"
+        },
+        {
+          "id": "E4",
+          "nombre": "Umbral de reservas — función con raíz múltiple",
+          "descripcion": "Nivel mínimo de reservas donde el sistema aún puede recuperarse.",
+          "dificultad": "avanzado",
+          "parametros": {
+            "funcion": "trascendente_2",
+            "intervalo": [0.1, 3],
+            "x0_newton": 1.5,
+            "tolerancia": 1e-6,
+            "max_iteraciones": 100,
+            "metodo": "ambos"
+          },
+          "descripcion_funcion": "f(x) = cos(x) - x",
+          "raiz_esperada": 0.7391,
+          "interpretacion": "El punto fijo de cos(x)=x (x≈0.739, punto de Dottie) representa el nivel de equilibrio de reservas. Newton converge en 5 iteraciones desde x₀=1.5.",
+          "unidades_x": "fracción de reserva disponible"
+        }
+      ]
+    },
+
+    "escenarioF": {
+      "titulo": "Propagación de Rumores y Pánico",
+      "metodo": "Sistemas Mal Condicionados",
+      "descripcion": "Analiza cómo matrices mal condicionadas modelan la sensibilidad de la desinformación",
+      "ejemplos": [
+        {
+          "id": "F1",
+          "nombre": "Sistema bien condicionado — información estable",
+          "descripcion": "Red de comunicación con información fiable (κ bajo).",
+          "dificultad": "basico",
+          "parametros": {
+            "n": 3,
+            "matriz": [
+              [4,  1,  0],
+              [1,  4,  1],
+              [0,  1,  4]
+            ],
+            "terminos_independientes": [5, 6, 5],
+            "perturbacion": 0.01,
+            "tolerancia": 1e-6,
+            "max_iteraciones": 100
+          },
+          "numero_condicion_aproximado": 2.73,
+          "interpretacion": "Con κ≈2.73, el sistema es muy estable. Una perturbación del 1% en los datos produce solo un 2.73% de variación en la solución: la información se transmite fielmente.",
+          "unidades": "nivel de creencia (0-10)"
+        },
+        {
+          "id": "F2",
+          "nombre": "Sistema moderadamente condicionado — rumor parcial",
+          "descripcion": "Red social donde los mensajes se distorsionan moderadamente.",
+          "dificultad": "intermedio",
+          "parametros": {
+            "n": 3,
+            "matriz": [
+              [2.0,  1.0,  1.0],
+              [1.0,  2.0,  1.0],
+              [1.0,  1.0,  2.0]
+            ],
+            "terminos_independientes": [4, 4, 4],
+            "perturbacion": 0.05,
+            "tolerancia": 1e-6,
+            "max_iteraciones": 100
+          },
+          "numero_condicion_aproximado": 4.0,
+          "interpretacion": "κ≈4. Una perturbación del 5% (rumor con 5% de distorsión) produce hasta un 20% de error en la percepción final de la población.",
+          "unidades": "nivel de creencia (0-10)"
+        },
+        {
+          "id": "F3",
+          "nombre": "Sistema mal condicionado — pánico colectivo",
+          "descripcion": "Red de comunicación en crisis donde pequeños cambios producen efectos masivos.",
+          "dificultad": "avanzado",
+          "parametros": {
+            "n": 3,
+            "matriz": [
+              [1.000,  0.999,  0.000],
+              [0.999,  1.000,  0.000],
+              [0.000,  0.000,  1.000]
+            ],
+            "terminos_independientes": [1.999, 1.999, 1.0],
+            "perturbacion": 0.001,
+            "tolerancia": 1e-6,
+            "max_iteraciones": 500
+          },
+          "numero_condicion_aproximado": 1999.0,
+          "interpretacion": "κ≈1999. Una perturbación de apenas 0.001 (error de transmisión del 0.1%) produce errores de hasta el 200% en la solución: modela cómo un rumor pequeño puede desencadenar pánico masivo.",
+          "unidades": "nivel de creencia (0-10)"
+        }
+      ]
+    },
+
+    "escenarioG": {
+      "titulo": "Difusión de Opinión Social",
+      "metodo": "Ecuaciones Diferenciales — Modelo SIR adaptado (RK4)",
+      "descripcion": "Modela la propagación de una opinión o movimiento social en la población",
+      "ejemplos": [
+        {
+          "id": "G1",
+          "nombre": "Difusión lenta — movimiento minoritario",
+          "descripcion": "Opinión que no logra masa crítica y se extingue gradualmente.",
+          "dificultad": "basico",
+          "parametros": {
+            "S0": 0.95,
+            "I0": 0.05,
+            "R0": 0.00,
+            "beta": 0.15,
+            "gamma": 0.20,
+            "t0": 0,
+            "tf": 60,
+            "h": 0.5,
+            "metodo": "rk4"
+          },
+          "descripcion_modelo": "dS/dt = -β·S·I  |  dI/dt = β·S·I - γ·I  |  dR/dt = γ·I",
+          "numero_reproduccion": 0.75,
+          "pico_opinion": 0.05,
+          "dia_pico": 0,
+          "interpretacion": "R₀ = β/γ = 0.75 < 1: la opinión no alcanza masa crítica y se extingue. Solo el 5% inicial adopta la postura y gradualmente vuelve a posición neutral.",
+          "unidades": "fracción de población"
+        },
+        {
+          "id": "G2",
+          "nombre": "Difusión moderada — movimiento con impacto real",
+          "descripcion": "Opinión que alcanza masa crítica y afecta a buena parte de la población.",
+          "dificultad": "intermedio",
+          "parametros": {
+            "S0": 0.98,
+            "I0": 0.02,
+            "R0": 0.00,
+            "beta": 0.40,
+            "gamma": 0.10,
+            "t0": 0,
+            "tf": 90,
+            "h": 0.25,
+            "metodo": "rk4"
+          },
+          "descripcion_modelo": "dS/dt = -β·S·I  |  dI/dt = β·S·I - γ·I  |  dR/dt = γ·I",
+          "numero_reproduccion": 4.0,
+          "pico_opinion": 0.68,
+          "dia_pico": 28,
+          "interpretacion": "R₀ = 4.0. El pico de adhesión (68%) ocurre el día 28. Al final ~94% de la población habrá adoptado o considerado la opinión al menos una vez.",
+          "unidades": "fracción de población"
+        },
+        {
+          "id": "G3",
+          "nombre": "Difusión viral — pánico o protesta masiva",
+          "descripcion": "Propagación extremadamente rápida típica de movimientos virales en redes sociales.",
+          "dificultad": "avanzado",
+          "parametros": {
+            "S0": 0.999,
+            "I0": 0.001,
+            "R0": 0.000,
+            "beta": 0.80,
+            "gamma": 0.05,
+            "t0": 0,
+            "tf": 60,
+            "h": 0.1,
+            "metodo": "rk4"
+          },
+          "descripcion_modelo": "dS/dt = -β·S·I  |  dI/dt = β·S·I - γ·I  |  dR/dt = γ·I",
+          "numero_reproduccion": 16.0,
+          "pico_opinion": 0.91,
+          "dia_pico": 14,
+          "interpretacion": "R₀ = 16. El pico del 91% ocurre en solo 14 días desde un 0.1% inicial. Modela la velocidad de propagación de una protesta o noticia viral en redes sociales modernas.",
+          "unidades": "fracción de población"
+        },
+        {
+          "id": "G4",
+          "nombre": "Modelo SIRS — opinión cíclica recurrente",
+          "descripcion": "Opinión que resurge periódicamente (pérdida de memoria social).",
+          "dificultad": "avanzado",
+          "parametros": {
+            "S0": 0.90,
+            "I0": 0.10,
+            "R0": 0.00,
+            "beta": 0.50,
+            "gamma": 0.15,
+            "xi": 0.08,
+            "t0": 0,
+            "tf": 180,
+            "h": 0.1,
+            "metodo": "rk4",
+            "variante": "SIRS"
+          },
+          "descripcion_modelo": "dS/dt = -β·S·I + ξ·R  |  dI/dt = β·S·I - γ·I  |  dR/dt = γ·I - ξ·R",
+          "numero_reproduccion": 3.33,
+          "interpretacion": "Con tasa de pérdida de memoria ξ=0.08, la opinión resurge en ciclos de ~45 días. Modela movimientos sociales recurrentes (aniversarios de protestas, ciclos de indignación).",
+          "unidades": "fracción de población"
+        }
+      ]
+    }
+
+  },
+
+  "configuracion_global": {
+    "decimales_mostrar": 6,
+    "tolerancia_default": 1e-6,
+    "max_iteraciones_default": 100,
+    "colores_escenarios": {
+      "escenarioA": "#3E594F",
+      "escenarioB": "#6C8C74",
+      "escenarioC": "#F2CA99",
+      "escenarioD": "#F29966",
+      "escenarioE": "#D97059",
+      "escenarioF": "#F29966",
+      "escenarioG": "#C9D7A6"
+    },
+    "metodos_disponibles": {
+      "sistemas_lineales":       ["gauss-seidel", "LU"],
+      "raices":                  ["newton-raphson", "biseccion"],
+      "interpolacion":           ["lagrange", "splines"],
+      "integracion":             ["simpson", "trapecio"],
+      "ecuaciones_diferenciales":["rk4", "euler", "heun"]
+    }
+  }
+}
