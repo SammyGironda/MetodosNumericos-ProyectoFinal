@@ -1,33 +1,3 @@
-/**
- * graficos.js - Módulo de visualización con Chart.js
- * Proyecto: Simulación Numérica de Crisis - Métodos Numéricos Aplicados
- *
- * Responsabilidades:
- *  - Crear, actualizar y destruir gráficos de Chart.js
- *  - Exponer una API unificada para todos los escenarios
- *  - Gestionar instancias activas para evitar memory leaks
- *  - Aplicar la paleta de colores del proyecto (variables CSS)
- *
- * Uso:
- *  import { Graficos } from './ui/graficos.js';
- *  // o, si no se usan módulos ES:
- *  const g = window.Graficos;
- *
- * API pública:
- *  Graficos.linea(canvasId, config)
- *  Graficos.barra(canvasId, config)
- *  Graficos.dispersion(canvasId, config)
- *  Graficos.mixto(canvasId, config)
- *  Graficos.polar(canvasId, config)
- *  Graficos.actualizar(canvasId, datasets, labels)
- *  Graficos.destruir(canvasId)
- *  Graficos.destruirTodos()
- *  Graficos.obtenerInstancia(canvasId)
- *  Graficos.exportar(canvasId, nombreArchivo)
- *  Graficos.paleta          → colores del proyecto
- *  Graficos.PALETA_ESCENARIOS → color por escenario A-G
- */
-
 const Graficos = (() => {
   'use strict';
 

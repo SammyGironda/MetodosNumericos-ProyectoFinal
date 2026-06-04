@@ -1,28 +1,3 @@
-/**
- * notificaciones.js - Módulo de alertas y mensajes del sistema
- * Proyecto: Simulación Numérica de Crisis - Métodos Numéricos Aplicados
- *
- * Responsabilidades:
- *  - Mostrar notificaciones tipo toast (esquina superior derecha)
- *  - Mostrar alertas inline dentro de secciones del contenido
- *  - Mostrar modales de confirmación y de error crítico
- *  - Manejar estados de carga (loading overlay por sección)
- *  - Auto-dismiss con temporizador configurable
- *  - Cola de notificaciones para evitar solapamiento
- *  - Accesibilidad: aria-live, roles, focus management
- *
- * Uso:
- *  window.Notificaciones.exito('Cálculo completado con éxito.')
- *  window.Notificaciones.error('No converge en el número de iteraciones dado.')
- *  window.Notificaciones.info('Cargando datos de ejemplo...')
- *  window.Notificaciones.advertencia('Error relativo > 10%. Revisar parámetros.')
- *  window.Notificaciones.inline(contenedorId, tipo, mensaje)
- *  window.Notificaciones.cargando(contenedorId, mensaje)
- *  window.Notificaciones.detenerCarga(contenedorId)
- *  window.Notificaciones.modal(config)
- *  window.Notificaciones.limpiarTodos()
- */
-
 const Notificaciones = (() => {
   'use strict';
 

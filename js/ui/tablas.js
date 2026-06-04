@@ -1,23 +1,3 @@
-/**
- * tablas.js - Módulo de generación de tablas HTML
- * Proyecto: Simulación Numérica de Crisis - Métodos Numéricos Aplicados
- *
- * Responsabilidades:
- *  - Generar tablas HTML dinámicas para resultados numéricos
- *  - Formatear números con precisión configurable
- *  - Resaltar filas de convergencia, errores y valores críticos
- *  - Exponer una API unificada para todos los escenarios
- *
- * Uso:
- *  window.Tablas.iteraciones(contenedorId, datos, opciones)
- *  window.Tablas.resultado(contenedorId, filas, columnas, opciones)
- *  window.Tablas.sistema(contenedorId, solucion, nombres, opciones)
- *  window.Tablas.comparacion(contenedorId, metodos, opciones)
- *  window.Tablas.limpiar(contenedorId)
- *
- * API pública completa al final del archivo.
- */
-
 const Tablas = (() => {
   'use strict';
 
