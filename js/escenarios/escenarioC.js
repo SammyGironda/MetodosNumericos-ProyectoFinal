@@ -47,7 +47,6 @@ function limpiarErrores(campos) {
 }
 
 // ─── Constantes del escenario ───────────────────────────────
-const ID_ESCENARIO  = 'escenario-c';
 const CHART_ID      = 'grafico-precios';
 const CHART_ERROR_ID = 'grafico-error-c';
 let chartPrincipal  = null;
@@ -69,8 +68,8 @@ const MIN_PUNTOS = 3;
 
 // ─── Función principal: renderizar el escenario ─────────────
 function renderizarEscenarioC(contenedor) {
-  chartPrincipal = null;
-  chartError     = null;
+  const ID_ESCENARIO = 'escenario-c';
+  const TITULO = 'Curva de Precios';
 
   contenedor.innerHTML = `
     <section class="escenario" id="${ID_ESCENARIO}" aria-labelledby="titulo-esc-c">

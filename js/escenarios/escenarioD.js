@@ -51,7 +51,6 @@ function limpiarErrores(campos) {
 }
 
 // ─── Constantes del escenario ───────────────────────────────
-const ID_ESCENARIO   = 'escenario-d';
 const CHART_TASA_ID  = 'grafico-tasa-d';
 const CHART_ACUM_ID  = 'grafico-acumulado-d';
 const CHART_ERROR_ID = 'grafico-error-d';
@@ -118,7 +117,8 @@ const MODELOS_TASA = {
 
 // ─── Función principal: renderizar el escenario ─────────────
 function renderizarEscenarioD(contenedor) {
-  chartTasa  = null;
+  const ID_ESCENARIO = 'escenario-d';
+  const TITULO = 'Costo Económico Acumulado de una Crisis de Abastecimiento';
   chartAcum  = null;
   chartError = null;
 
