@@ -125,10 +125,7 @@ Accede directamente al link de demo arriba. No requiere instalación.
 ### Opción 2 — Local
 ```bash
 # Clonar repositorio
-git clone https://github.com/TU_USUARIO/proyecto-metodos-numericos.git
-
-# Entrar al directorio
-cd proyecto-metodos-numericos
+git clone https://github.com/SammyGironda/MetodosNumericos-ProyectoFinal.git
 
 # Abrir con Live Server (VS Code) o cualquier servidor local
 # NO abrir index.html directamente con doble clic (rutas relativas)
