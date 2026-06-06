@@ -106,7 +106,7 @@ function generarHTMLSidebar() {
         <ul class="sidebar__nav" role="list">
           ${grupo.rutas.map(ruta => `
             <li class="sidebar__item">
-              
+                <a
                 href="${ruta.hash}"
                 class="sidebar__link"
                 data-ruta="${ruta.hash}"
