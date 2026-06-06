@@ -260,16 +260,271 @@ function construirModelo(modelo, p) {
 }
 
 // ─────────────────────────────────────────────
+// EJEMPLOS PRECARGADOS DESDE ejemplos.json
+// ─────────────────────────────────────────────
+
+/**
+ * Devuelve los ejemplos del escenarioD desde window.DATOS_EJEMPLOS.
+ * Si no están disponibles, usa un fallback hardcodeado.
+ * @returns {Object[]}
+ */
+function obtenerEjemplosDisponibles() {
+  const datos = window.DATOS_EJEMPLOS?.escenarios?.escenarioD?.ejemplos;
+  if (datos && datos.length > 0) return datos;
+
+  // Fallback si ejemplos.json no está cargado
+  return [
+    {
+      id: 'D0',
+      nombre: 'Costo exponencial — fallback',
+      dificultad: 'basico',
+      descripcion: 'Ejemplo cargado localmente (ejemplos.json no disponible).',
+      parametros: {
+        funcion: 'exponencial',
+        A: 500,
+        k: 0.08,
+        a: 0,
+        b: 30,
+        n: 100,
+        metodo: 'simpson',
+      },
+      descripcion_funcion: 'f(t) = 500·e^(0.08·t)',
+      interpretacion: 'Costo de emergencia con escalada exponencial durante 30 días.',
+      unidades: 'Bs',
+    },
+  ];
+}
+
+/**
+ * Puebla el <select> de ejemplos precargados con los datos del JSON.
+ * Idéntico al patrón de escenarioA.js.
+ */
+function poblarSelectEjemplos() {
+  const select = document.getElementById('d-select-ejemplo');
+  if (!select) return;
+
+  const ejemplos = obtenerEjemplosDisponibles();
+
+  // Limpiar opciones previas (excepto la primera vacía)
+  while (select.options.length > 1) select.remove(1);
+
+  const iconos = { basico: '🟢', intermedio: '🟡', avanzado: '🔴' };
+
+  ejemplos.forEach((ej) => {
+    const option = document.createElement('option');
+    option.value = ej.id;
+    option.textContent = `${iconos[ej.dificultad] ?? '⚪'} [${ej.id}] ${ej.nombre}`;
+    select.appendChild(option);
+  });
+
+  // Preseleccionar el primero
+  if (ejemplos.length > 0) select.value = ejemplos[0].id;
+
+  // Actualizar badge de dificultad al cambiar selección
+  select.addEventListener('change', () => {
+    const lista = obtenerEjemplosDisponibles();
+    const sel   = lista.find(e => e.id === select.value);
+    const span  = document.getElementById('d-ejemplo-dificultad');
+    if (span) span.textContent = sel ? `Dificultad: ${sel.dificultad ?? '—'}` : '';
+  });
+}
+
+/**
+ * Carga el ejemplo seleccionado en el formulario.
+ * Mapea los campos del JSON a los inputs correspondientes del escenarioD.
+ */
+function cargarEjemploSeleccionado() {
+  const select   = document.getElementById('d-select-ejemplo');
+  const idSel    = select?.value;
+  const ejemplos = obtenerEjemplosDisponibles();
+  const ejemplo  = idSel
+    ? ejemplos.find(e => e.id === idSel)
+    : ejemplos[0];
+
+  if (!ejemplo) {
+    mostrarNotificacion('No hay ejemplos disponibles.', 'warning');
+    return;
+  }
+
+  const p = ejemplo.parametros;
+
+  // ── 1. Modelo ────────────────────────────────────────────────────────────
+  // Los nombres en el JSON coinciden con los valores del <select id="d-modelo">
+  // excepto: 'constante' y 'gaussiana' y 'periodica' no existen en el formulario.
+  // Se mapean a los modelos disponibles.
+  const mapaModelo = {
+    constante:    'lineal',       // c(t) = costo_diario + 0·t  → lineal con b=0
+    lineal:       'lineal',
+    exponencial:  'exponencial',
+    cuadratico:   'cuadratico',
+    gaussiana:    'personalizado',// sin equivalente directo → personalizado
+    periodica:    'sinusoidal',
+    sinusoidal:   'sinusoidal',
+  };
+
+  const modeloMapeado = mapaModelo[p.funcion] ?? 'exponencial';
+  const selectModelo  = document.getElementById('d-modelo');
+  if (selectModelo) selectModelo.value = modeloMapeado;
+  actualizarVistaModelo(); // Mostrar/ocultar paneles de parámetros
+
+  // ── 2. Parámetros por modelo ─────────────────────────────────────────────
+
+  if (modeloMapeado === 'lineal') {
+    // JSON puede venir como: { costo_diario } (constante) o { costo_inicial, pendiente }
+    const a_val = p.costo_inicial ?? p.costo_diario ?? p.a ?? 0;
+    const b_val = p.pendiente     ?? p.b             ?? 0;
+    const inpA  = document.getElementById('d-lin-a');
+    const inpB  = document.getElementById('d-lin-b');
+    if (inpA) inpA.value = a_val;
+    if (inpB) inpB.value = b_val;
+
+  } else if (modeloMapeado === 'exponencial') {
+    const inpA = document.getElementById('d-exp-A');
+    const inpK = document.getElementById('d-exp-k');
+    if (inpA) inpA.value = p.A ?? p.amplitud ?? 500;
+    if (inpK) inpK.value = p.k ?? p.coef_crecimiento ?? 0.08;
+
+  } else if (modeloMapeado === 'cuadratico') {
+    const inpA = document.getElementById('d-cua-a');
+    const inpB = document.getElementById('d-cua-b');
+    const inpC = document.getElementById('d-cua-c');
+    if (inpA) inpA.value = p.a ?? 0;
+    if (inpB) inpB.value = p.b ?? 0;
+    if (inpC) inpC.value = p.c ?? 0;
+
+  } else if (modeloMapeado === 'sinusoidal') {
+    // JSON: { costo_base, amplitud } → A y B del formulario
+    const inpA = document.getElementById('d-sin-A');
+    const inpB = document.getElementById('d-sin-B');
+    if (inpA) inpA.value = p.costo_base  ?? p.A ?? 1000;
+    if (inpB) inpB.value = p.amplitud    ?? p.B ?? 300;
+
+  } else if (modeloMapeado === 'personalizado') {
+    // Para 'gaussiana' u otros, usar descripcion_funcion como expresión orientativa
+    const inpExpr = document.getElementById('d-per-expr');
+    if (inpExpr) {
+      // Construir expresión desde parámetros de gaussiana si están presentes
+      if (p.funcion === 'gaussiana') {
+        const cb = p.costo_base      ?? 30000;
+        const am = p.amplitud_pico   ?? 200000;
+        const ce = p.centro_pico     ?? 20;
+        const an = p.ancho_pico      ?? 5;
+        inpExpr.value =
+          `${cb} + ${am} * Math.exp(-Math.pow(t - ${ce}, 2) / (2 * Math.pow(${an}, 2)))`;
+      } else {
+        inpExpr.value = ejemplo.descripcion_funcion ?? '';
+      }
+    }
+  }
+
+  // ── 3. Intervalo y subintervalos ─────────────────────────────────────────
+  const inpA = document.getElementById('d-a');
+  const inpB = document.getElementById('d-b');
+  const inpN = document.getElementById('d-n');
+  if (inpA) inpA.value = p.a  ?? 0;
+  if (inpB) inpB.value = p.b  ?? 30;
+  if (inpN) inpN.value = p.n  ?? 100;
+
+  // ── 4. Descripción contextual del ejemplo ────────────────────────────────
+  const divDesc = document.getElementById('d-descripcion-ejemplo');
+  const lista   = document.getElementById('d-lista-descripcion');
+
+  if (lista && divDesc) {
+    const contexto = ejemplo.descripcion_contexto ?? ejemplo.descripcion;
+
+    const itemsContexto = Array.isArray(contexto)
+      ? contexto.map(d => `<li>${d}</li>`).join('')
+      : `<li>${contexto}</li>`;
+
+    const itemFuncion = ejemplo.descripcion_funcion
+      ? `<li><strong>Función:</strong> <code>${ejemplo.descripcion_funcion}</code></li>`
+      : '';
+
+    const itemInterp = ejemplo.interpretacion
+      ? `<li style="margin-top: var(--spacing-2);">
+           <strong>Interpretación:</strong> ${ejemplo.interpretacion}
+           ${ejemplo.unidades ? `<em>(${ejemplo.unidades})</em>` : ''}
+         </li>`
+      : '';
+
+    const itemSol = ejemplo.solucion_analitica !== undefined
+      ? `<li>
+           <strong>Solución analítica esperada:</strong>
+           $${Number(ejemplo.solucion_analitica).toLocaleString('es-BO')}
+           ${ejemplo.unidades ?? ''}
+         </li>`
+      : '';
+
+    lista.innerHTML = itemsContexto + itemFuncion + itemInterp + itemSol;
+    divDesc.style.display = 'block';
+  }
+
+  // ── 5. Ocultar resultados anteriores ────────────────────────────────────
+  const resultados = document.getElementById('d-resultados');
+  if (resultados) resultados.hidden = true;
+
+  mostrarNotificacion(`✅ "${ejemplo.nombre}" cargado`, 'success');
+}
+
+// ─────────────────────────────────────────────
+// NOTIFICACIONES (helper local)
+// ─────────────────────────────────────────────
+
+/**
+ * Muestra una notificación usando window.Notificaciones si está disponible.
+ * @param {string} mensaje
+ * @param {'info'|'success'|'error'|'warning'} tipo
+ */
+function mostrarNotificacion(mensaje, tipo = 'info') {
+  const n = window.Notificaciones;
+  if (!n) return;
+  if (tipo === 'success') return n.exito(mensaje);
+  if (tipo === 'error')   return n.error(mensaje);
+  if (tipo === 'warning') return n.advertencia(mensaje);
+  return n.info(mensaje);
+}
+
+// ─────────────────────────────────────────────
 // GENERADORES DE HTML
 // ─────────────────────────────────────────────
 
 /**
  * HTML del formulario de parámetros.
+ * Incluye el bloque de selección de ejemplos precargados.
  * @returns {string}
  */
 function htmlFormulario() {
   return `
-    <!-- Selector de modelo -->
+    <!-- ══════════════════════════════════════════════════
+         BLOQUE DE EJEMPLOS PRECARGADOS (patrón escenarioA)
+         ══════════════════════════════════════════════════ -->
+    <div class="form-row form-row--2-col" style="margin-bottom: var(--spacing-3);">
+      <div class="form-group">
+        <label class="form-label" for="d-select-ejemplo">Ejemplo precargado</label>
+        <select class="form-input" id="d-select-ejemplo">
+          <option value="">— Selecciona un ejemplo —</option>
+        </select>
+        <span class="form-help" id="d-ejemplo-dificultad"></span>
+      </div>
+      <div class="form-group" style="display:flex; align-items:flex-end; gap: var(--spacing-2);">
+        <button type="button" class="btn btn--secondary btn--small" id="d-btn-ejemplo">
+          📋 Cargar Ejemplo
+        </button>
+        <button type="button" class="btn btn--secondary btn--small" id="d-btn-limpiar-ejemplo">
+          🗑️ Limpiar
+        </button>
+      </div>
+    </div>
+
+    <!-- Descripción contextual del ejemplo cargado -->
+    <div id="d-descripcion-ejemplo" class="alert alert--info mb-3" style="display:none;">
+      <strong>Contexto del ejemplo cargado:</strong>
+      <ul id="d-lista-descripcion" class="mt-1"></ul>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════
+         SELECTOR DE MODELO
+         ══════════════════════════════════════════════════ -->
     <div class="form-group">
       <label class="form-label" for="d-modelo">Modelo de costo marginal c(t)</label>
       <select class="form-input" id="d-modelo">
@@ -308,7 +563,7 @@ function htmlFormulario() {
         <div class="form-group">
           <label class="form-label" for="d-exp-k">Tasa de crecimiento (k)</label>
           <input class="form-input" type="number" id="d-exp-k" value="0.08" step="0.001">
-          <span class="form-help">k > 0 = escalada, k < 0 = alivio</span>
+          <span class="form-help">k > 0 = escalada, k &lt; 0 = alivio</span>
         </div>
       </div>
     </div>
@@ -722,14 +977,8 @@ function renderizarGrafico(canvasId, xs, ys, puntosGauss) {
   for (let i = 0; i < xs.length; i += paso) indices.push(i);
   if (indices.at(-1) !== xs.length - 1) indices.push(xs.length - 1);
 
-  const labels     = indices.map(i => xs[i].toFixed(2));
-  const dataLinea  = indices.map(i => parseFloat(ys[i].toFixed(4)));
-
-  // Puntos de Gauss como dataset separado
-  const dataGauss = xs.map((x, idx) => {
-    const pg = puntosGauss.find(p => Math.abs(p.x - x) < 1e-6);
-    return pg ? pg.fx : null;
-  });
+  const labels    = indices.map(i => xs[i].toFixed(2));
+  const dataLinea = indices.map(i => parseFloat(ys[i].toFixed(4)));
 
   chartInstanciaD = new Chart(canvas, {
     type: 'line',
@@ -751,11 +1000,11 @@ function renderizarGrafico(canvasId, xs, ys, puntosGauss) {
           label:           'Nodos Gauss-Legendre',
           data:            indices.map(i => {
             const xVal = xs[i];
-            const pg = puntosGauss.find(p => Math.abs(p.x - xVal) < 0.5);
+            const pg   = puntosGauss.find(p => Math.abs(p.x - xVal) < 0.5);
             return pg ? pg.fx : null;
           }),
-          borderColor:     colores.ALERT,
-          backgroundColor: colores.ALERT,
+          borderColor:     colores.ALERT ?? '#D97059',
+          backgroundColor: colores.ALERT ?? '#D97059',
           borderWidth:     0,
           pointRadius:     7,
           pointStyle:      'star',
@@ -935,6 +1184,10 @@ function limpiarEscenarioD() {
   const errores = document.getElementById('d-errores');
   if (errores) errores.innerHTML = '';
 
+  // Ocultar también la descripción del ejemplo
+  const divDesc = document.getElementById('d-descripcion-ejemplo');
+  if (divDesc) divDesc.style.display = 'none';
+
   if (chartInstanciaD) { chartInstanciaD.destroy(); chartInstanciaD = null; }
 }
 
@@ -945,10 +1198,25 @@ function limpiarEscenarioD() {
 function registrarEventosD() {
   document.getElementById('d-btn-calcular')
     ?.addEventListener('click', calcularEscenarioD);
+
   document.getElementById('d-btn-limpiar')
     ?.addEventListener('click', limpiarEscenarioD);
+
+  document.getElementById('d-btn-limpiar-ejemplo')
+    ?.addEventListener('click', limpiarEscenarioD);
+
   document.getElementById('d-modelo')
     ?.addEventListener('change', actualizarVistaModelo);
+
+  // Botón "Cargar Ejemplo" — patrón idéntico a escenarioA
+  document.getElementById('d-btn-ejemplo')
+    ?.addEventListener('click', cargarEjemploSeleccionado);
+
+  // Poblar el select de ejemplos
+  poblarSelectEjemplos();
+
+  // Cargar automáticamente el primer ejemplo al abrir el escenario
+  cargarEjemploSeleccionado();
 }
 
 // ─────────────────────────────────────────────
@@ -956,6 +1224,9 @@ function registrarEventosD() {
 // ─────────────────────────────────────────────
 
 function escenarioD() {
+  // Destruir gráfico previo si existía (navegación entre escenarios)
+  if (chartInstanciaD) { chartInstanciaD.destroy(); chartInstanciaD = null; }
+
   setTimeout(registrarEventosD, 0);
 
   return `
