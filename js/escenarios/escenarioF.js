@@ -1,1101 +1,1123 @@
-(function() {
+/**
+ * escenarioF.js — Difusión de Rumores y Pánico Social
+ * Simulación Numérica de Crisis - Métodos Numéricos Aplicados
+ *
+ * CONTEXTO DEL PROBLEMA:
+ *   Durante una crisis de abastecimiento, los rumores se propagan generando
+ *   pánico colectivo. A diferencia del Escenario G (modelo SIR estándar),
+ *   aquí se modela un sistema de ecuaciones lineales MAL CONDICIONADO que
+ *   representa la red de influencia entre grupos sociales.
+ *
+ *   El sistema Ax = b representa:
+ *     - A: matriz de influencia entre n grupos sociales
+ *     - b: vector de "presión de rumor" externa sobre cada grupo
+ *     - x: vector de "nivel de adopción del rumor" por grupo
+ *
+ *   El mal condicionamiento refleja que pequeñas perturbaciones en b
+ *   (nueva información, desmentido) producen grandes cambios en x
+ *   (reacción desproporcionada del sistema social).
+ *
+ *   ADEMÁS: se modela la dinámica temporal del rumor con la EDO logística:
+ *     dR/dt = α·R·(1 - R/K) - δ·R
+ *
+ *   donde:
+ *     R(t) = proporción de personas que creen el rumor
+ *     α    = tasa de contagio del rumor
+ *     K    = capacidad máxima de adopción (saturación)
+ *     δ    = tasa de desmentido/olvido
+ *
+ * MÉTODOS NUMÉRICOS:
+ *   1. Gauss-Seidel (sistema lineal de influencias)
+ *   2. Número de condición κ(A) = ||A|| · ||A⁻¹|| (análisis de estabilidad)
+ *   3. RK4 (dinámica temporal del rumor)
+ *
+ * EXPORTA: window.escenarioF
+ */
 
-  // ============================================================
-  // escenarioF.js - Escenario F: Propagación de Rumores y Pánico
-  // Métodos: Sistemas mal condicionados — Gauss-Seidel + análisis
-  //          de número de condición + perturbaciones
-  // Contexto: Modelado de la propagación de rumores durante una
-  //           crisis social usando sistemas de ecuaciones lineales
-  //           que representan flujos de información entre zonas
-  // ============================================================
+'use strict';
 
-  function gaussSeidel(...args) {
-    return window.SistemasLineales?.gaussSeidel?.(...args);
-  }
+// ─────────────────────────────────────────────
+// ALGORITMOS AUTOCONTENIDOS
+// ─────────────────────────────────────────────
 
-  function descomposicionLU(...args) {
-    return window.SistemasLineales?.descomposicionLU?.(...args);
-  }
+/**
+ * Clona una matriz en profundidad.
+ * @param {number[][]} M
+ * @returns {number[][]}
+ */
+function clonarMatriz(M) {
+  return M.map(f => [...f]);
+}
 
-  function renderizarGrafico(...args) {
-    return window.Graficos?.linea?.(...args);
-  }
+/**
+ * Norma infinita de un vector.
+ * @param {number[]} v
+ * @returns {number}
+ */
+function normaInf(v) {
+  return Math.max(...v.map(Math.abs));
+}
 
-  function renderizarTabla(...args) {
-    return window.Tablas?.generar?.(...args);
-  }
+/**
+ * Norma infinita de una matriz (máxima suma de fila).
+ * ||A||∞ = max_i Σ_j |a_ij|
+ * @param {number[][]} A
+ * @returns {number}
+ */
+function normaInfMatriz(A) {
+  return Math.max(...A.map(fila => fila.reduce((s, v) => s + Math.abs(v), 0)));
+}
 
-  function mostrarNotificacion(mensaje, tipo = 'info') {
-    const notifier = window.Notificaciones;
-    if (!notifier) return;
-    if (tipo === 'success') return notifier.exito(mensaje);
-    if (tipo === 'error') return notifier.error(mensaje);
-    if (tipo === 'warning' || tipo === 'warn') return notifier.advertencia(mensaje);
-    return notifier.info(mensaje);
-  }
+/**
+ * Resuelve Ax = b con eliminación Gaussiana + pivoteo parcial.
+ * Retorna x o null si el sistema es singular.
+ * @param {number[][]} A
+ * @param {number[]}   b
+ * @returns {number[]|null}
+ */
+function gauss(A, b) {
+  const n = A.length;
+  const M = clonarMatriz(A);
+  const v = [...b];
 
-  function mostrarErrores(errores) {
-    if (!errores || typeof errores !== 'object') return;
-    Object.entries(errores).forEach(([campo, msg]) => {
-      const el = document.getElementById(campo);
-      if (el) { el.textContent = msg; el.style.display = 'block'; }
-    });
-  }
-
-  function limpiarErrores(campos) {
-    if (!Array.isArray(campos)) campos = [campos];
-    campos.forEach((campo) => {
-      const el = document.getElementById(campo);
-      if (el) { el.textContent = ''; el.style.display = 'none'; }
-    });
-  }
-
-  function normaVectorial(...args) { return window.Utilidades?.normaVectorial?.(...args); }
-  function normaMatriz(...args) { return window.Utilidades?.normaMatriz?.(...args); }
-  function productoMatrizVector(...args) { return window.Utilidades?.productoMatrizVector?.(...args); }
-
-  // ─── Constantes ──────────────────────────────────────────────
-  const ID_ESCENARIO       = 'escenario-f';
-  const CHART_RADAR_ID     = 'grafico-radar-f';
-  const CHART_COND_ID      = 'grafico-condicion-f';
-  const CHART_PERTURB_ID   = 'grafico-perturb-f';
-  let chartRadar           = null;
-  let chartCond            = null;
-  let chartPerturb         = null;
-
-  // ─── Sistemas precargados ────────────────────────────────────
-  /**
-   * Cada sistema representa el flujo de rumores entre n zonas de
-   * la ciudad. A·x = b donde:
-   *   A[i][j] = tasa de influencia de zona j sobre zona i
-   *   x[i]    = índice de pánico en zona i (incógnita)
-   *   b[i]    = nivel de tensión social observado en zona i
-   */
-  const SISTEMAS_PRECARGADOS = {
-    bien_condicionado: {
-      nombre:      'Sistema bien condicionado (4 zonas)',
-      descripcion: 'Flujo de rumores equilibrado — solución estable ante perturbaciones',
-      A: [
-        [10, -1,  2,  0],
-        [-1,  11, -1,  3],
-        [ 2,  -1, 10, -1],
-        [ 0,   3, -1,  8]
-      ],
-      b: [6, 25, -11, 15],
-      xInicial: [0, 0, 0, 0]
-    },
-    mal_condicionado: {
-      nombre:      'Sistema mal condicionado (4 zonas)',
-      descripcion: 'Red de rumores con fuerte interdependencia — solución muy sensible a errores en datos',
-      A: [
-        [1,    1,    1,    1   ],
-        [1,    1.01, 1,    1   ],
-        [1,    1,    1.01, 1   ],
-        [1,    1,    1,    1.01]
-      ],
-      b: [4, 4.01, 4.01, 4.01],
-      xInicial: [1, 1, 1, 1]
-    },
-    hilbert_3: {
-      nombre:      'Matriz de Hilbert 3×3 (muy mal condicionada)',
-      descripcion: 'Caso extremo: pequeños errores en tensión social generan estimaciones de pánico completamente distintas',
-      A: [
-        [1,     1/2,  1/3 ],
-        [1/2,   1/3,  1/4 ],
-        [1/3,   1/4,  1/5 ]
-      ],
-      b: [1, 1, 1],
-      xInicial: [0, 0, 0]
-    },
-    asimetrico: {
-      nombre:      'Red asimétrica de influencia (5 zonas)',
-      descripcion: 'Zona central domina la narrativa — modelo de propagación radial',
-      A: [
-        [8,  -1,  -1,  -1,  -1],
-        [-1,  6,   0,   0,  -1],
-        [-1,  0,   6,  -1,   0],
-        [-1,  0,  -1,   6,   0],
-        [-1, -1,   0,   0,   6]
-      ],
-      b: [20, 5, 8, 3, 10],
-      xInicial: [0, 0, 0, 0, 0]
-    },
-    personalizado: {
-      nombre:      'Sistema personalizado',
-      descripcion: 'Ingresa tu propia matriz A y vector b',
-      A:           null,
-      b:           null,
-      xInicial:    null
+  for (let col = 0; col < n; col++) {
+    // Pivoteo parcial
+    let pivote = col;
+    for (let f = col + 1; f < n; f++) {
+      if (Math.abs(M[f][col]) > Math.abs(M[pivote][col])) pivote = f;
     }
-  };
+    [M[col], M[pivote]] = [M[pivote], M[col]];
+    [v[col], v[pivote]] = [v[pivote], v[col]];
 
-  // ─── Función principal ────────────────────────────────────────
-  function renderizarEscenarioF(contenedor) {
-    chartRadar = chartCond = chartPerturb = null;
+    if (Math.abs(M[col][col]) < 1e-14) return null;
 
-    contenedor.innerHTML = `
-      <section class="escenario" id="${ID_ESCENARIO}" aria-labelledby="titulo-esc-f">
-
-        <!-- ENCABEZADO -->
-        <div class="escenario__header card card--escenario-f">
-          <div class="card__body">
-            <div class="escenario__titulo-grupo">
-              <span class="badge badge--escenario-f">Escenario F</span>
-              <h1 id="titulo-esc-f" class="escenario__titulo">
-                Propagación de Rumores y Pánico Social — Sistemas Mal Condicionados
-              </h1>
-            </div>
-            <p class="escenario__descripcion">
-              Durante una crisis, los rumores se propagan entre zonas de la ciudad formando
-              un sistema de ecuaciones lineales <strong>A·x = b</strong>. Este escenario
-              investiga qué ocurre cuando ese sistema está <strong>mal condicionado</strong>:
-              pequeños errores en los datos observados producen estimaciones de pánico
-              completamente erróneas. Se compara <strong>Gauss-Seidel</strong> con
-              <strong>Descomposición LU</strong> y se analiza el
-              <strong>número de condición κ(A)</strong>.
-            </p>
-            <div class="escenario__formula">
-              <code>A·x = b &nbsp;|&nbsp; κ(A) = ‖A‖·‖A⁻¹‖ &nbsp;|&nbsp; Δx/x ≤ κ(A)·Δb/b</code>
-              <p class="form-help">
-                κ(A) ≈ 1: bien condicionado | κ(A) ≫ 1: mal condicionado — amplifica errores en b
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <!-- SELECTOR DE SISTEMA -->
-        <div class="card">
-          <div class="card__header">
-            <h2 class="card__title">Sistema de Ecuaciones — Red de Rumores</h2>
-          </div>
-          <div class="card__body">
-
-            <div class="form-row form-row--2-col">
-              <div class="form-group">
-                <label class="form-label" for="sistema-preset">
-                  Sistema precargado
-                </label>
-                <select class="form-input" id="sistema-preset">
-                  ${Object.entries(SISTEMAS_PRECARGADOS).map(([k, s]) =>
-                    `<option value="${k}">${s.nombre}</option>`
-                  ).join('')}
-                </select>
-                <span class="form-help" id="desc-sistema">
-                  ${SISTEMAS_PRECARGADOS.bien_condicionado.descripcion}
-                </span>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="tamano-personalizado">
-                  Tamaño del sistema (n×n)
-                </label>
-                <select class="form-input" id="tamano-personalizado" disabled>
-                  <option value="2">2×2</option>
-                  <option value="3">3×3</option>
-                  <option value="4" selected>4×4</option>
-                  <option value="5">5×5</option>
-                </select>
-                <span class="form-help">Solo para sistema personalizado</span>
-              </div>
-            </div>
-
-            <!-- Matriz A y vector b -->
-            <div id="contenedor-matriz-f" style="margin-top:1rem;">
-              <!-- Generado dinámicamente -->
-            </div>
-
-            <!-- Parámetros de Gauss-Seidel -->
-            <div class="form-row form-row--3-col" style="margin-top:1rem;">
-              <div class="form-group">
-                <label class="form-label" for="tolerancia-f">
-                  Tolerancia ε (Gauss-Seidel)
-                </label>
-                <input class="form-input" type="number" id="tolerancia-f"
-                  value="0.0001" min="1e-12" max="0.1" step="any" />
-                <span class="form-help">Criterio de parada: ‖xₖ₊₁ − xₖ‖ &lt; ε</span>
-                <span class="form-error" id="error-tol-f" aria-live="polite"></span>
-              </div>
-              <div class="form-group">
-                <label class="form-label" for="max-iter-f">
-                  Máximo de iteraciones
-                </label>
-                <input class="form-input" type="number" id="max-iter-f"
-                  value="100" min="5" max="2000" step="1" />
-                <span class="form-error" id="error-iter-f" aria-live="polite"></span>
-              </div>
-              <div class="form-group">
-                <label class="form-label" for="perturbacion-f">
-                  Perturbación δ en b (%)
-                </label>
-                <input class="form-input" type="number" id="perturbacion-f"
-                  value="1" min="0" max="50" step="0.1" />
-                <span class="form-help">
-                  Simula errores en la medición de tensión social
-                </span>
-              </div>
-            </div>
-
-            <div class="form-button-group" style="margin-top:1rem;">
-              <button type="button" class="btn btn--primary" id="btn-resolver-f">
-                Resolver y analizar condicionamiento
-              </button>
-              <button type="button" class="btn btn--secondary" id="btn-reset-f">
-                Restablecer
-              </button>
-            </div>
-            <span class="form-error" id="error-general-f" aria-live="polite"></span>
-
-          </div>
-        </div>
-
-        <!-- RESULTADOS -->
-        <div id="resultados-f" hidden aria-live="polite">
-
-          <!-- ALERTA DE CONDICIONAMIENTO -->
-          <div id="alerta-condicion-f"></div>
-
-          <!-- SOLUCIONES COMPARADAS -->
-          <div class="card">
-            <div class="card__header">
-              <h2 class="card__title">Índices de Pánico por Zona — Solución x</h2>
-            </div>
-            <div class="card__body">
-              <div class="grid grid--2-col">
-                <div>
-                  <h3 style="font-size:1rem; margin-bottom:0.75rem;">Gauss-Seidel (iterativo)</h3>
-                  <div id="solucion-gs-f"></div>
-                </div>
-                <div>
-                  <h3 style="font-size:1rem; margin-bottom:0.75rem;">Descomposición LU (directo)</h3>
-                  <div id="solucion-lu-f"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- MÉTRICAS NUMÉRICAS -->
-          <div class="card">
-            <div class="card__header">
-              <h2 class="card__title">Métricas de Calidad Numérica</h2>
-            </div>
-            <div class="card__body">
-              <div class="grid grid--4-col" id="metricas-f"></div>
-            </div>
-          </div>
-
-          <!-- GRÁFICO RADAR: índices de pánico por zona -->
-          <div class="card">
-            <div class="card__header">
-              <h2 class="card__title">Distribución de Pánico por Zona</h2>
-            </div>
-            <div class="card__body">
-              <div class="grafico-contenedor" style="height: 380px;">
-                <canvas id="${CHART_RADAR_ID}" role="img"
-                  aria-label="Radar de índices de pánico por zona"></canvas>
-              </div>
-            </div>
-          </div>
-
-          <!-- CONVERGENCIA GAUSS-SEIDEL -->
-          <div class="card">
-            <div class="card__header">
-              <h2 class="card__title">Convergencia de Gauss-Seidel</h2>
-            </div>
-            <div class="card__body">
-              <div class="grafico-contenedor" style="height: 320px;">
-                <canvas id="${CHART_COND_ID}" role="img"
-                  aria-label="Convergencia del método de Gauss-Seidel"></canvas>
-              </div>
-            </div>
-          </div>
-
-          <!-- ANÁLISIS DE PERTURBACIÓN -->
-          <div class="card">
-            <div class="card__header">
-              <h2 class="card__title">Efecto de Perturbaciones en b sobre la Solución x</h2>
-            </div>
-            <div class="card__body">
-              <div class="grafico-contenedor" style="height: 320px;">
-                <canvas id="${CHART_PERTURB_ID}" role="img"
-                  aria-label="Amplificación del error por mal condicionamiento"></canvas>
-              </div>
-            </div>
-          </div>
-
-          <!-- TABLA DE ITERACIONES -->
-          <div class="card">
-            <div class="card__header">
-              <h2 class="card__title">Historial de Iteraciones (Gauss-Seidel)</h2>
-            </div>
-            <div class="card__body">
-              <div id="tabla-iter-f" class="tabla-contenedor"></div>
-            </div>
-          </div>
-
-          <!-- TABLA DE RESIDUALES -->
-          <div class="card">
-            <div class="card__header">
-              <h2 class="card__title">Verificación: Residual r = b − A·x</h2>
-            </div>
-            <div class="card__body">
-              <div id="tabla-residual-f" class="tabla-contenedor"></div>
-            </div>
-          </div>
-
-          <!-- INTERPRETACIÓN -->
-          <div class="card card--info">
-            <div class="card__header">
-              <h2 class="card__title">Interpretación del Análisis de Condicionamiento</h2>
-            </div>
-            <div class="card__body" id="interpretacion-f"></div>
-          </div>
-
-        </div><!-- /resultados -->
-
-      </section>
-    `;
-
-    _cargarSistema('bien_condicionado');
-    _registrarEventos();
+    for (let f = col + 1; f < n; f++) {
+      const factor = M[f][col] / M[col][col];
+      for (let k = col; k < n; k++) M[f][k] -= factor * M[col][k];
+      v[f] -= factor * v[col];
+    }
   }
 
-  // Exponer al scope global para el router runtime
-  window.renderizarEscenarioF = renderizarEscenarioF;
+  // Sustitución regresiva
+  const x = new Array(n).fill(0);
+  for (let i = n - 1; i >= 0; i--) {
+    let s = v[i];
+    for (let j = i + 1; j < n; j++) s -= M[i][j] * x[j];
+    x[i] = s / M[i][i];
+  }
+  return x;
+}
 
-  // ─── Matriz editable ──────────────────────────────────────────
-  function _renderizarMatrizEditable(A, b, n, soloLectura = false) {
-    const contenedor = document.getElementById('contenedor-matriz-f');
-    if (!contenedor) return;
+/**
+ * Gauss-Seidel con historial de iteraciones.
+ * @param {number[][]} A
+ * @param {number[]}   b
+ * @param {number}     tol
+ * @param {number}     maxIter
+ * @returns {Object}
+ */
+function gaussSeidel(A, b, tol, maxIter) {
+  const n = A.length;
+  const historial = [];
 
-    const zonas = Array.from({ length: n }, (_, i) => `Zona ${i + 1}`);
+  // Verificar diagonal no nula
+  for (let i = 0; i < n; i++) {
+    if (Math.abs(A[i][i]) < 1e-14)
+      return { solucion: null, convergió: false, iteraciones: historial,
+               error: `Diagonal A[${i+1}][${i+1}] = 0. Reordena las ecuaciones.` };
+  }
 
-    contenedor.innerHTML = `
-      <div style="overflow-x:auto;">
-        <p class="form-help" style="margin-bottom:0.5rem;">
-          Matriz A — Influencias entre zonas &nbsp;|&nbsp; Vector b — Tensión observada
-        </p>
-        <table style="border-collapse:collapse; font-size:13px;">
+  let x = new Array(n).fill(0);
+
+  historial.push({
+    iteracion: 0, x: [...x], error: null, detalle: 'Vector inicial x⁰ = 0',
+  });
+
+  for (let iter = 1; iter <= maxIter; iter++) {
+    const xAnterior = [...x];
+
+    for (let i = 0; i < n; i++) {
+      let s = b[i];
+      for (let j = 0; j < n; j++) {
+        if (j !== i) s -= A[i][j] * x[j];
+      }
+      x[i] = s / A[i][i];
+    }
+
+    // Error relativo máximo
+    let err = 0;
+    for (let i = 0; i < n; i++) {
+      const d = Math.abs(x[i] - xAnterior[i]);
+      const denom = Math.abs(x[i]) > 1e-14 ? Math.abs(x[i]) : 1;
+      err = Math.max(err, d / denom);
+    }
+
+    historial.push({
+      iteracion: iter, x: [...x], error: err,
+      detalle: `iter ${iter}: error = ${err.toExponential(4)}`,
+    });
+
+    if (err < tol)
+      return { solucion: x, convergió: true, iteraciones: historial,
+               error: null, iteracionesTotal: iter, errorFinal: err };
+  }
+
+  return { solucion: x, convergió: false, iteraciones: historial,
+           error: 'Gauss-Seidel no convergió. La matriz puede no ser diagonal dominante.',
+           iteracionesTotal: maxIter, errorFinal: historial.at(-1)?.error ?? NaN };
+}
+
+/**
+ * Estima el número de condición κ(A) ≈ ||A||∞ · ||A⁻¹||∞.
+ * Un κ grande indica sistema mal condicionado.
+ * @param {number[][]} A
+ * @returns {{ kappa: number, normA: number, normAinv: number, error: string|null }}
+ */
+function numeroCondicion(A) {
+  const n     = A.length;
+  const normA = normaInfMatriz(A);
+
+  // Calcular A⁻¹ columna por columna (resolviendo A·e_i para cada e_i)
+  const Ainv = [];
+  for (let j = 0; j < n; j++) {
+    const ej = new Array(n).fill(0);
+    ej[j] = 1;
+    const col = gauss(A, ej);
+    if (!col)
+      return { kappa: Infinity, normA, normAinv: Infinity,
+               error: 'La matriz es singular, no se puede calcular κ.' };
+    Ainv.push(col);
+  }
+
+  // Transponer para obtener filas de A⁻¹
+  const AinvT = Array.from({ length: n }, (_, i) => Ainv.map(col => col[i]));
+  const normAinv = normaInfMatriz(AinvT);
+  const kappa    = normA * normAinv;
+
+  return { kappa, normA, normAinv, error: null };
+}
+
+// ─────────────────────────────────────────────
+// RK4 PARA EDO LOGÍSTICA DEL RUMOR
+// ─────────────────────────────────────────────
+
+/**
+ * dR/dt = α·R·(1 - R/K) - δ·R
+ * Modelo logístico con desmentido.
+ * @param {number} alpha - tasa de contagio del rumor
+ * @param {number} K     - capacidad máxima (fracción, ej: 0.9)
+ * @param {number} delta - tasa de desmentido
+ * @returns {Function} f(t, R) → dR/dt
+ */
+function modeloRumor(alpha, K, delta) {
+  return (t, R) => alpha * R * (1 - R / K) - delta * R;
+}
+
+/**
+ * RK4 escalar para la EDO del rumor.
+ * @param {Function} f    - f(t, R) → dR/dt
+ * @param {number}   R0   - condición inicial
+ * @param {number}   tFin
+ * @param {number}   h    - paso
+ * @returns {{ t: number[], R: number[], pasos: Object[] }}
+ */
+function rk4Escalar(f, R0, tFin, h) {
+  const t = [0], R = [R0], pasos = [];
+  const n = Math.ceil(tFin / h);
+
+  for (let i = 0; i < n; i++) {
+    const ti = t[i];
+    const Ri = R[i];
+
+    const k1 = f(ti,           Ri);
+    const k2 = f(ti + h / 2,   Ri + (h / 2) * k1);
+    const k3 = f(ti + h / 2,   Ri + (h / 2) * k2);
+    const k4 = f(ti + h,       Ri + h * k3);
+
+    const Rnuevo = Ri + (h / 6) * (k1 + 2*k2 + 2*k3 + k4);
+    const Rclamp = Math.max(0, Math.min(1, Rnuevo)); // R ∈ [0, 1]
+
+    t.push(parseFloat((ti + h).toFixed(8)));
+    R.push(Rclamp);
+    pasos.push({
+      paso: i + 1, t: ti + h, R: Rclamp, k1, k2, k3, k4,
+      detalle: `t=${(ti+h).toFixed(2)}: R=${Rclamp.toFixed(6)}, k1=${k1.toFixed(4)}`,
+    });
+  }
+
+  return { t, R, pasos };
+}
+
+// ─────────────────────────────────────────────
+// MATRICES PREDEFINIDAS (sistemas mal condicionados)
+// ─────────────────────────────────────────────
+
+/**
+ * Genera una matriz de Hilbert n×n — el ejemplo clásico de sistema
+ * extremadamente mal condicionado.
+ * H[i][j] = 1 / (i + j + 1)
+ * @param {number} n
+ * @returns {number[][]}
+ */
+function matrizHilbert(n) {
+  return Array.from({ length: n }, (_, i) =>
+    Array.from({ length: n }, (_, j) => 1 / (i + j + 1))
+  );
+}
+
+/**
+ * Genera vector b = A·x_exacto con x_exacto = [1, 1, ..., 1].
+ * Permite comparar la solución numérica con la exacta.
+ * @param {number[][]} A
+ * @returns {number[]}
+ */
+function vectorBdesdeUnos(A) {
+  const n = A.length;
+  return Array.from({ length: n }, (_, i) =>
+    A[i].reduce((s, aij) => s + aij, 0)
+  );
+}
+
+/**
+ * Retorna las matrices predefinidas disponibles para el escenario.
+ * @param {string} tipo
+ * @param {number} n    - tamaño (solo para Hilbert)
+ * @returns {{ A: number[][], b: number[], descripcion: string }|null}
+ */
+function obtenerMatrizPredefinida(tipo, n = 4) {
+  switch (tipo) {
+    case 'hilbert': {
+      const A = matrizHilbert(n);
+      const b = vectorBdesdeUnos(A);
+      return {
+        A, b,
+        descripcion: `Matriz de Hilbert ${n}×${n} (extremadamente mal condicionada)`,
+        xExacta: new Array(n).fill(1),
+      };
+    }
+    case 'red3': {
+      // Red de 3 grupos: bien condicionada (referencia)
+      const A = [
+        [10, -1,  2],
+        [-1,  11, -1],
+        [ 2, -1,  10],
+      ];
+      const b = [6, 25, -11];
+      return {
+        A, b,
+        descripcion: 'Red 3 grupos (diagonal dominante, bien condicionada)',
+        xExacta: null,
+      };
+    }
+    case 'crisis4': {
+      // Red de 4 grupos en crisis — moderadamente mal condicionada
+      const A = [
+        [ 4.0,  3.9,  0.0,  0.0],
+        [ 3.9,  4.0,  0.0,  0.0],
+        [ 0.0,  0.0,  6.0,  5.8],
+        [ 0.0,  0.0,  5.8,  6.0],
+      ];
+      const b = [7.9, 7.9, 11.8, 11.8];
+      return {
+        A, b,
+        descripcion: 'Red de crisis 4 grupos (moderadamente mal condicionada)',
+        xExacta: null,
+      };
+    }
+    default: return null;
+  }
+}
+
+// ─────────────────────────────────────────────
+// GENERADORES DE HTML
+// ─────────────────────────────────────────────
+
+/**
+ * HTML del formulario principal.
+ * @returns {string}
+ */
+function htmlFormulario() {
+  return `
+    <!-- SECCIÓN 1: Sistema lineal de influencias -->
+    <div class="card card--info" style="margin-bottom: var(--spacing-4);">
+      <div class="card__body">
+        <strong>Parte 1 — Sistema de influencias (Ax = b):</strong>
+        elige una red predefinida o ingresa tu propia matriz.
+      </div>
+    </div>
+
+    <div class="form-row form-row--2-col">
+      <div class="form-group">
+        <label class="form-label" for="f-red">Red social predefinida</label>
+        <select class="form-input" id="f-red" name="red">
+          <option value="hilbert3">Hilbert 3×3 (mal condicionada)</option>
+          <option value="hilbert4">Hilbert 4×4 (muy mal condicionada)</option>
+          <option value="red3">Red 3 grupos (bien condicionada)</option>
+          <option value="crisis4" selected>Red crisis 4 grupos</option>
+          <option value="manual">Ingresar manualmente (3×3)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="f-tol-gs">Tolerancia Gauss-Seidel</label>
+        <input class="form-input" type="number" id="f-tol-gs"
+          value="0.000001" min="1e-12" max="0.01" step="0.000001">
+      </div>
+    </div>
+
+    <!-- Entrada manual de matriz 3×3 -->
+    <div id="f-matriz-manual" hidden>
+      <p class="form-help" style="margin-bottom: var(--spacing-2);">
+        Ingresa la matriz A (3×3) y el vector b fila por fila:
+      </p>
+      <div style="overflow-x: auto;">
+        <table style="border-collapse: separate; border-spacing: 4px;">
           <thead>
             <tr>
-              <th style="padding:6px 10px; background:var(--color-neutral-100,#f5f5f5);">Zona</th>
-              ${zonas.map(z =>
-                `<th style="padding:6px 10px; background:var(--color-neutral-100,#f5f5f5); text-align:center;">${z}</th>`
-              ).join('')}
-              <th style="padding:6px 10px; background:var(--color-accent-warm,#F29966); color:#fff; text-align:center;">b</th>
+              <th>a₁₁</th><th>a₁₂</th><th>a₁₃</th>
+              <th style="padding-left:12px;">b₁</th>
             </tr>
           </thead>
           <tbody>
-            ${A.map((fila, i) => `
+            ${[1,2,3].map(i => `
               <tr>
-                <td style="padding:4px 10px; font-weight:500; color:var(--color-text-secondary,#666);">
-                  ${zonas[i]}
-                </td>
-                ${fila.map((val, j) => `
-                  <td style="padding:3px 4px;">
-                    <input
-                      class="form-input"
-                      type="number"
-                      data-fila="${i}" data-col="${j}" data-tipo="A"
-                      value="${parseFloat(val.toFixed(6))}"
-                      step="any"
-                      style="width:80px; text-align:right; font-size:12px;"
-                      ${soloLectura ? 'readonly' : ''}
-                      aria-label="A[${i+1}][${j+1}]"
-                    />
+                ${[1,2,3].map(j => `
+                  <td>
+                    <input class="form-input f-aij" type="number"
+                      id="f-a${i}${j}"
+                      value="${i === j ? 10 : (Math.random() > 0.5 ? -1 : 1)}"
+                      style="width:70px;">
                   </td>
                 `).join('')}
-                <td style="padding:3px 4px;">
-                  <input
-                    class="form-input"
-                    type="number"
-                    data-fila="${i}" data-tipo="b"
-                    value="${parseFloat(b[i].toFixed(6))}"
-                    step="any"
-                    style="width:80px; text-align:right; font-size:12px; background:var(--color-info,#FFF3E0);"
-                    ${soloLectura ? 'readonly' : ''}
-                    aria-label="b[${i+1}]"
-                  />
+                <td style="padding-left:12px;">
+                  <input class="form-input" type="number"
+                    id="f-b${i}" value="${i}" style="width:70px;">
                 </td>
               </tr>
             `).join('')}
           </tbody>
         </table>
       </div>
-    `;
-  }
+    </div>
 
-  // ─── Cargar sistema precargado ────────────────────────────────
-  function _cargarSistema(key) {
-    const sistema    = SISTEMAS_PRECARGADOS[key];
-    const descEl     = document.getElementById('desc-sistema');
-    const tamanoSel  = document.getElementById('tamano-personalizado');
-    if (descEl) descEl.textContent = sistema.descripcion;
+    <hr style="margin: var(--spacing-5) 0; border-color: var(--color-neutral-200);">
 
-    const esPersonalizado = key === 'personalizado';
-    if (tamanoSel) tamanoSel.disabled = !esPersonalizado;
-
-    if (esPersonalizado) {
-      const n = parseInt(tamanoSel?.value ?? '4', 10);
-      const A = Array.from({ length: n }, (_, i) =>
-        Array.from({ length: n }, (_, j) => i === j ? 4 : 0)
-      );
-      const b = Array(n).fill(1);
-      _renderizarMatrizEditable(A, b, n, false);
-    } else {
-      _renderizarMatrizEditable(sistema.A, sistema.b, sistema.A.length, false);
-    }
-  }
-
-  // ─── Leer matriz desde el DOM ─────────────────────────────────
-  function _leerMatrizDOM() {
-    const inputs = document.querySelectorAll('#contenedor-matriz-f input[data-tipo]');
-    const AMap = {}, bMap = {};
-
-    inputs.forEach(inp => {
-      const fila = parseInt(inp.dataset.fila, 10);
-      const tipo = inp.dataset.tipo;
-      const val  = parseFloat(inp.value);
-      if (isNaN(val)) return;
-
-      if (tipo === 'A') {
-        const col = parseInt(inp.dataset.col, 10);
-        if (!AMap[fila]) AMap[fila] = {};
-        AMap[fila][col] = val;
-      } else {
-        bMap[fila] = val;
-      }
-    });
-
-    const n = Object.keys(AMap).length;
-    if (n === 0) return null;
-
-    const A = Array.from({ length: n }, (_, i) =>
-      Array.from({ length: n }, (_, j) => AMap[i]?.[j] ?? 0)
-    );
-    const b = Array.from({ length: n }, (_, i) => bMap[i] ?? 0);
-
-    return { A, b, n };
-  }
-
-  // ─── Registro de eventos ──────────────────────────────────────
-  function _registrarEventos() {
-    document.getElementById('sistema-preset')
-      ?.addEventListener('change', e => _cargarSistema(e.target.value));
-
-    document.getElementById('tamano-personalizado')
-      ?.addEventListener('change', e => {
-        const key = document.getElementById('sistema-preset')?.value;
-        if (key === 'personalizado') _cargarSistema('personalizado');
-      });
-
-    document.getElementById('btn-resolver-f')
-      ?.addEventListener('click', _manejarResolucion);
-
-    document.getElementById('btn-reset-f')
-      ?.addEventListener('click', _restablecerTodo);
-  }
-
-  // ─── Manejador principal ──────────────────────────────────────
-  function _manejarResolucion() {
-    limpiarErrores(['error-tol-f', 'error-iter-f', 'error-general-f']);
-
-    const datos = _leerMatrizDOM();
-    if (!datos) {
-      mostrarErrores({ 'error-general-f': 'No se pudo leer la matriz. Verifica los valores.' });
-      return;
-    }
-
-    const tol      = parseFloat(document.getElementById('tolerancia-f').value);
-    const maxIter  = parseInt(document.getElementById('max-iter-f').value, 10);
-    const delta    = parseFloat(document.getElementById('perturbacion-f').value) / 100;
-
-    if (isNaN(tol) || tol <= 0 || tol >= 1) {
-      mostrarErrores({ 'error-tol-f': 'La tolerancia debe ser un número positivo menor que 1.' });
-      return;
-    }
-    if (isNaN(maxIter) || maxIter < 5) {
-      mostrarErrores({ 'error-iter-f': 'El máximo de iteraciones debe ser al menos 5.' });
-      return;
-    }
-
-    const { A, b, n } = datos;
-    const xInicialKey  = document.getElementById('sistema-preset')?.value;
-    const xInicial     = SISTEMAS_PRECARGADOS[xInicialKey]?.xInicial ?? Array(n).fill(0);
-
-    const resultados = _ejecutarAnalisis(A, b, n, tol, maxIter, delta, xInicial);
-    _renderizarResultados(datos, resultados, tol, delta);
-
-    const divRes = document.getElementById('resultados-f');
-    if (divRes) {
-      divRes.hidden = false;
-      divRes.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-    mostrarNotificacion('Análisis de condicionamiento completado', 'success');
-  }
-
-  // ─── Ejecución del análisis completo ─────────────────────────
-  function _ejecutarAnalisis(A, b, n, tol, maxIter, delta, xInicial) {
-    // 1. Resolver con Gauss-Seidel
-    const resGS = gaussSeidel(A, b, xInicial, tol, maxIter);
-
-    // 2. Resolver con LU (solución de referencia)
-    let resLU = null;
-    try {
-      resLU = descomposicionLU(A, b);
-    } catch (e) {
-      resLU = { x: null, error: e.message };
-    }
-
-    // 3. Número de condición κ(A) ≈ ‖A‖∞ · ‖A⁻¹‖∞ (estimación por norma infinito)
-    const kappa = _estimarNúmeroCondicion(A, n);
-
-    // 4. Residual r = b - A·x (para cada solución)
-    const residualGS = resGS.convergio && resGS.x
-      ? _calcularResidual(A, resGS.x, b)
-      : null;
-    const residualLU = resLU?.x
-      ? _calcularResidual(A, resLU.x, b)
-      : null;
-
-    // 5. Análisis de perturbación: resolver (A·x = b + δb) para varios δ
-    const analisisPerturb = _analizarPerturbacion(A, b, n, resLU?.x, kappa);
-
-    // 6. Sistema perturbado con δ del usuario
-    const bPerturbado = b.map(bi => bi * (1 + delta * (Math.random() * 2 - 1)));
-    let xPerturbado   = null;
-    try {
-      const resPert = descomposicionLU(A, bPerturbado);
-      xPerturbado   = resPert.x;
-    } catch (_) { xPerturbado = null; }
-
-    const errRelPerturbacion = resLU?.x && xPerturbado
-      ? normaVectorial(resLU.x.map((xi, i) => xi - xPerturbado[i]), 'inf') /
-        Math.max(normaVectorial(resLU.x, 'inf'), 1e-14)
-      : null;
-
-    return {
-      resGS, resLU,
-      kappa, residualGS, residualLU,
-      analisisPerturb, bPerturbado, xPerturbado,
-      errRelPerturbacion, n
-    };
-  }
-
-  // ─── Estimación del número de condición ──────────────────────
-  /**
-   * Estima κ(A) = ‖A‖∞ · ‖A⁻¹‖∞
-   * A⁻¹ se aproxima resolviendo A·ei = e_i para cada vector canónico
-   */
-  function _estimarNúmeroCondicion(A, n) {
-    try {
-      const normaA = normaMatriz(A, 'inf');
-
-      // Construir A⁻¹ columna a columna
-      const Ainv = [];
-      for (let j = 0; j < n; j++) {
-        const ej = Array(n).fill(0);
-        ej[j]    = 1;
-        const col = descomposicionLU(A, ej);
-        if (!col?.x) return Infinity;
-        Ainv.push(col.x);
-      }
-
-      // Transponer para obtener filas de A⁻¹
-      const AinvT = Array.from({ length: n }, (_, i) =>
-        Array.from({ length: n }, (_, j) => Ainv[j][i])
-      );
-
-      const normaAinv = normaMatriz(AinvT, 'inf');
-      return normaA * normaAinv;
-    } catch (_) {
-      return Infinity;
-    }
-  }
-
-  // ─── Calcular residual ────────────────────────────────────────
-  function _calcularResidual(A, x, b) {
-    const Ax = productoMatrizVector(A, x);
-    return b.map((bi, i) => bi - Ax[i]);
-  }
-
-  // ─── Análisis de perturbaciones ───────────────────────────────
-  function _analizarPerturbacion(A, b, n, xRef, kappa) {
-    const deltas      = [0.001, 0.005, 0.01, 0.05, 0.1, 0.2, 0.5];
-    const resultados  = [];
-
-    deltas.forEach(d => {
-      // Perturbar b con error relativo d en norma
-      const bPert = b.map(bi => bi + d * Math.abs(bi) * (Math.random() > 0.5 ? 1 : -1));
-
-      let xPert = null;
-      try {
-        const res = descomposicionLU(A, bPert);
-        xPert     = res.x;
-      } catch (_) { xPert = null; }
-
-      const errRelB = normaVectorial(b.map((bi, i) => bi - bPert[i]), 'inf') /
-                      Math.max(normaVectorial(b, 'inf'), 1e-14);
-
-      const errRelX = xRef && xPert
-        ? normaVectorial(xRef.map((xi, i) => xi - xPert[i]), 'inf') /
-          Math.max(normaVectorial(xRef, 'inf'), 1e-14)
-        : null;
-
-      const ampEsperada = isFinite(kappa) ? kappa * errRelB : null;
-
-      resultados.push({
-        delta:       d,
-        errRelB:     errRelB,
-        errRelX:     errRelX,
-        ampEsperada: ampEsperada,
-        amplificacion: (errRelX !== null && errRelB > 1e-14)
-          ? errRelX / errRelB
-          : null
-      });
-    });
-
-    return resultados;
-  }
-
-  // ─── Renderizado completo ─────────────────────────────────────
-  function _renderizarResultados({ A, b, n }, resultados, tol, delta) {
-    _renderizarAlertaCondicion(resultados.kappa);
-    _renderizarSoluciones(n, resultados);
-    _renderizarMetricas(resultados, tol);
-    _renderizarGraficoRadar(n, resultados);
-    _renderizarGraficoConvergencia(resultados.resGS);
-    _renderizarGraficoPerturbacion(resultados.analisisPerturb, resultados.kappa);
-    _renderizarTablaIteraciones(resultados.resGS);
-    _renderizarTablaResidual(n, b, resultados);
-    _renderizarInterpretacion(A, b, n, resultados, delta);
-  }
-
-  // ─── Alerta de condicionamiento ───────────────────────────────
-  function _renderizarAlertaCondicion(kappa) {
-    const contenedor = document.getElementById('alerta-condicion-f');
-    if (!contenedor) return;
-
-    let clase = 'success', icono = '✓', mensaje = '';
-
-    if (!isFinite(kappa)) {
-      clase   = 'error';
-      icono   = '✗';
-      mensaje = `La matriz es <strong>singular o casi singular</strong> (κ → ∞).
-                El sistema no tiene solución única — la red de rumores es inestable.`;
-    } else if (kappa > 1e6) {
-      clase   = 'error';
-      icono   = '⚠';
-      mensaje = `κ(A) ≈ ${kappa.toExponential(2)} — Sistema <strong>extremadamente mal condicionado</strong>.
-                Un error del 0.0001% en los datos produce errores del ${(kappa * 0.000001 * 100).toFixed(0)}% en la solución.`;
-    } else if (kappa > 1000) {
-      clase   = 'warning';
-      icono   = '⚠';
-      mensaje = `κ(A) ≈ ${kappa.toFixed(1)} — Sistema <strong>mal condicionado</strong>.
-                Los resultados son sensibles a errores de medición en la tensión social.`;
-    } else if (kappa > 100) {
-      clase   = 'warning';
-      icono   = '△';
-      mensaje = `κ(A) ≈ ${kappa.toFixed(2)} — Condicionamiento <strong>moderado</strong>.
-                Interpretar los índices de pánico con precaución.`;
-    } else {
-      mensaje = `κ(A) ≈ ${kappa.toFixed(4)} — Sistema <strong>bien condicionado</strong>.
-                Los índices de pánico son robustos ante errores de medición.`;
-    }
-
-    contenedor.innerHTML = `
-      <div class="alert alert--${clase}" style="margin-bottom:1rem;">
-        ${icono} ${mensaje}
+    <!-- SECCIÓN 2: Dinámica temporal del rumor (RK4) -->
+    <div class="card card--info" style="margin-bottom: var(--spacing-4);">
+      <div class="card__body">
+        <strong>Parte 2 — Dinámica temporal del rumor (RK4):</strong>
+        modelo logístico con desmentido dR/dt = α·R·(1−R/K) − δ·R
       </div>
-    `;
-  }
+    </div>
 
-  // ─── Soluciones lado a lado ───────────────────────────────────
-  function _renderizarSoluciones(n, { resGS, resLU, xPerturbado }) {
-    const zonas = Array.from({ length: n }, (_, i) => `Zona ${i + 1}`);
-
-    const _tablaX = (x, etiquetas) => {
-      if (!x) return `<div class="alert alert--error">No convergió o matriz singular.</div>`;
-      return `
-        <table style="width:100%; border-collapse:collapse; font-size:13px;">
-          <thead>
-            <tr>
-              <th style="padding:6px 8px; background:var(--color-neutral-100,#f5f5f5);">Zona</th>
-              <th style="padding:6px 8px; background:var(--color-neutral-100,#f5f5f5); text-align:right;">Índice de pánico</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${x.map((xi, i) => `
-              <tr>
-                <td style="padding:5px 8px;">${etiquetas[i]}</td>
-                <td style="padding:5px 8px; text-align:right; font-family:monospace;">
-                  ${xi.toFixed(8)}
-                </td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-        ${resGS.iteraciones !== undefined
-          ? `<p class="form-help" style="margin-top:0.5rem;">
-              Convergió en <strong>${resGS.iteraciones}</strong> iteraciones
-            </p>`
-          : ''}
-      `;
-    };
-
-    const gsEl = document.getElementById('solucion-gs-f');
-    const luEl = document.getElementById('solucion-lu-f');
-
-    if (gsEl) gsEl.innerHTML = _tablaX(resGS.x, zonas);
-    if (luEl) luEl.innerHTML = _tablaX(resLU?.x, zonas);
-  }
-
-  // ─── Métricas ─────────────────────────────────────────────────
-  function _renderizarMetricas({ kappa, resGS, residualLU, errRelPerturbacion }, tol) {
-    const contenedor = document.getElementById('metricas-f');
-    if (!contenedor) return;
-
-    const normResLU = residualLU
-      ? normaVectorial(residualLU, 'inf').toExponential(3)
-      : '—';
-
-    const metricas = [
-      {
-        label: 'Número de condición κ(A)',
-        valor: isFinite(kappa) ? kappa.toExponential(4) : '∞ (singular)',
-        clase: !isFinite(kappa) ? 'alert' : kappa > 1000 ? 'alert' : kappa > 100 ? 'info' : 'success'
-      },
-      {
-        label: 'Iteraciones Gauss-Seidel',
-        valor: resGS.convergio ? String(resGS.iteraciones) : `No convergió (>${resGS.iteraciones})`,
-        clase: resGS.convergio ? 'success' : 'alert'
-      },
-      {
-        label: '‖r‖∞ residual LU',
-        valor: normResLU,
-        clase: 'info'
-      },
-      {
-        label: 'Error por perturbación δ',
-        valor: errRelPerturbacion !== null
-          ? `${(errRelPerturbacion * 100).toFixed(4)}%`
-          : '—',
-        clase: errRelPerturbacion !== null && errRelPerturbacion > 0.1 ? 'alert' : 'success'
-      }
-    ];
-
-    contenedor.innerHTML = metricas.map(m => `
-      <div class="card card--${m.clase}" style="text-align:center; padding:1rem;">
-        <p class="form-help" style="margin:0 0 0.25rem;">${m.label}</p>
-        <strong style="font-size:1.1rem; font-family:monospace;">${m.valor}</strong>
+    <div class="form-row form-row--3-col">
+      <div class="form-group">
+        <label class="form-label" for="f-R0">Adopción inicial R₀</label>
+        <input class="form-input" type="number" id="f-R0"
+          value="0.02" min="0.001" max="0.99" step="0.001">
+        <span class="form-help">Fracción inicial que cree el rumor (0-1)</span>
       </div>
-    `).join('');
-  }
+      <div class="form-group">
+        <label class="form-label" for="f-alpha">Tasa de contagio (α)</label>
+        <input class="form-input" type="number" id="f-alpha"
+          value="0.5" min="0.01" max="5" step="0.01">
+        <span class="form-help">Velocidad de propagación del rumor</span>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="f-K">Saturación (K)</label>
+        <input class="form-input" type="number" id="f-K"
+          value="0.85" min="0.01" max="1" step="0.01">
+        <span class="form-help">Máxima fracción que adoptará el rumor</span>
+      </div>
+    </div>
 
-  // ─── Gráfico radar ────────────────────────────────────────────
-  function _renderizarGraficoRadar(n, { resGS, resLU, xPerturbado }) {
-    const canvas = document.getElementById(CHART_RADAR_ID);
-    if (!canvas) return;
-    if (chartRadar) { chartRadar.destroy(); chartRadar = null; }
+    <div class="form-row form-row--3-col">
+      <div class="form-group">
+        <label class="form-label" for="f-delta">Tasa de desmentido (δ)</label>
+        <input class="form-input" type="number" id="f-delta"
+          value="0.05" min="0" max="2" step="0.01">
+        <span class="form-help">Fracción que abandona el rumor por día</span>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="f-tFin">Días a simular</label>
+        <input class="form-input" type="number" id="f-tFin"
+          value="30" min="5" max="365" step="1">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="f-h">Paso RK4 (h)</label>
+        <input class="form-input" type="number" id="f-h"
+          value="0.1" min="0.01" max="1" step="0.01">
+      </div>
+    </div>
 
-    const labels   = Array.from({ length: n }, (_, i) => `Zona ${i + 1}`);
-    const datasets = [];
+    <div class="form-button-group">
+      <button type="button" class="btn btn--primary" id="f-btn-calcular">
+        ▶ Analizar difusión de rumor
+      </button>
+      <button type="button" class="btn btn--secondary" id="f-btn-limpiar">
+        ↺ Restablecer
+      </button>
+    </div>
+  `;
+}
 
-    if (resLU?.x) {
-      datasets.push({
-        label: 'LU (referencia)',
-        data: resLU.x.map(v => parseFloat(v.toFixed(6))),
-        borderColor: '#3E594F',
-        backgroundColor: 'rgba(62,89,79,0.15)',
-        borderWidth: 2,
-        pointRadius: 4
-      });
-    }
-    if (resGS.x && resGS.convergio) {
-      datasets.push({
-        label: 'Gauss-Seidel',
-        data: resGS.x.map(v => parseFloat(v.toFixed(6))),
-        borderColor: '#6C8C74',
-        backgroundColor: 'rgba(108,140,116,0.10)',
-        borderWidth: 2,
-        borderDash: [5, 3],
-        pointRadius: 4
-      });
-    }
-    if (xPerturbado) {
-      datasets.push({
-        label: 'Solución perturbada',
-        data: xPerturbado.map(v => parseFloat(v.toFixed(6))),
-        borderColor: '#D97059',
-        backgroundColor: 'rgba(217,112,89,0.10)',
-        borderWidth: 1.5,
-        borderDash: [3, 3],
-        pointRadius: 3
-      });
-    }
+/**
+ * HTML de la tabla del sistema lineal Ax = b.
+ * Muestra A, b, x calculado y residuo.
+ * @param {number[][]} A
+ * @param {number[]}   b
+ * @param {number[]}   x
+ * @param {number[]|null} xExacta
+ * @returns {string}
+ */
+function htmlTablaSistema(A, b, x, xExacta) {
+  const n = A.length;
 
-    chartRadar = renderizarGrafico(CHART_RADAR_ID, {
-      type: 'radar',
-      data: { labels, datasets },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { position: 'top' } },
-        scales: {
-          r: {
-            beginAtZero: false,
-            ticks: { font: { size: 11 } }
-          }
-        }
-      }
-    });
-  }
+  // Calcular residuo r = b - Ax
+  const residuo = b.map((bi, i) => bi - A[i].reduce((s, aij, j) => s + aij * x[j], 0));
 
-  // ─── Gráfico convergencia Gauss-Seidel ────────────────────────
-  function _renderizarGraficoConvergencia(resGS) {
-    const canvas = document.getElementById(CHART_COND_ID);
-    if (!canvas) return;
-    if (chartCond) { chartCond.destroy(); chartCond = null; }
+  const filas = Array.from({ length: n }, (_, i) => {
+    const errorComp = xExacta ? Math.abs(x[i] - xExacta[i]) : null;
+    return `
+      <tr>
+        <td class="table__cell--number">x${i+1}</td>
+        <td class="table__cell--number table__cell--highlight">
+          ${x[i].toFixed(8)}
+        </td>
+        ${xExacta ? `
+          <td class="table__cell--number">${xExacta[i].toFixed(6)}</td>
+          <td class="table__cell--number ${errorComp > 1e-4 ? 'table__cell--error' : ''}">
+            ${errorComp.toExponential(4)}
+          </td>
+        ` : ''}
+        <td class="table__cell--number">${residuo[i].toExponential(4)}</td>
+      </tr>
+    `;
+  }).join('');
 
-    if (!resGS.historial || resGS.historial.length === 0) {
-      canvas.parentElement.innerHTML =
-        `<div class="alert alert--warning">Gauss-Seidel no convergió — no hay historial de convergencia.</div>`;
-      return;
-    }
+  return `
+    <div style="overflow-x: auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Variable</th>
+            <th>x calculado</th>
+            ${xExacta ? '<th>x exacto</th><th>Error abs.</th>' : ''}
+            <th>Residuo (bᵢ − Aᵢx)</th>
+          </tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
+  `;
+}
 
-    const labels = resGS.historial.map((_, i) => `It. ${i + 1}`);
-    const errores = resGS.historial.map(h => parseFloat(h.error.toExponential(10)));
+/**
+ * HTML del historial de Gauss-Seidel (máx 25 iteraciones).
+ * @param {Object[]} iteraciones
+ * @param {number}   n - dimensión del sistema
+ * @returns {string}
+ */
+function htmlTablaGaussSeidel(iteraciones, n) {
+  if (!iteraciones.length)
+    return '<p class="form-help">Sin iteraciones disponibles.</p>';
 
-    chartCond = renderizarGrafico(CHART_COND_ID, {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [{
-          label: '‖xₖ₊₁ − xₖ‖ (error iterativo)',
-          data: errores,
-          borderColor: '#3E594F',
-          backgroundColor: 'rgba(62,89,79,0.08)',
-          borderWidth: 2,
-          pointRadius: 2,
-          fill: true,
-          tension: 0.2
-        }]
+  const mostrar  = iteraciones.slice(0, 26);
+  const truncado = iteraciones.length > 26;
+
+  const headers = ['Iter.', ...Array.from({ length: n }, (_, i) => `x${i+1}`), 'Error rel.'];
+
+  const filas = mostrar.map(it => `
+    <tr>
+      <td class="table__cell--number">${it.iteracion}</td>
+      ${it.x.map(v => `<td class="table__cell--number">${v.toFixed(6)}</td>`).join('')}
+      <td class="table__cell--number">
+        ${it.error !== null ? it.error.toExponential(4) : '—'}
+      </td>
+    </tr>
+  `).join('');
+
+  return `
+    <div style="overflow-x: auto;">
+      <table>
+        <thead>
+          <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
+    ${truncado ? `<p class="form-help">Mostrando 26 de ${iteraciones.length} iteraciones.</p>` : ''}
+  `;
+}
+
+/**
+ * HTML de la tabla de la dinámica RK4 del rumor (cada 5 pasos).
+ * @param {number[]} t
+ * @param {number[]} R
+ * @returns {string}
+ */
+function htmlTablaRumor(t, R) {
+  const intervalo = Math.max(1, Math.floor(t.length / 20));
+  const indices   = [];
+  for (let i = 0; i < t.length; i += intervalo) indices.push(i);
+  if (indices.at(-1) !== t.length - 1) indices.push(t.length - 1);
+
+  const filas = indices.map(i => {
+    const pct   = (R[i] * 100).toFixed(1);
+    const clase = R[i] > 0.6 ? 'table__cell--error'
+                : R[i] > 0.3 ? 'table__cell--highlight'
+                : '';
+    return `
+      <tr>
+        <td class="table__cell--number">${t[i].toFixed(1)}</td>
+        <td class="table__cell--number ${clase}">${R[i].toFixed(6)}</td>
+        <td class="table__cell--number ${clase}">${pct}%</td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    <div style="overflow-x: auto;">
+      <table>
+        <thead>
+          <tr><th>Día (t)</th><th>R(t) fracción</th><th>Adopción</th></tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
+    <p class="form-help">
+      Amarillo = adopción moderada (&gt;30%), rojo = adopción alta (&gt;60%).
+      Mostrando ${indices.length} de ${t.length} pasos.
+    </p>
+  `;
+}
+
+/**
+ * HTML de interpretación combinada (sistema + dinámica).
+ * @param {Object} paramsSL  - { kappa, convergió, n, descripcion, xExacta }
+ * @param {Object} paramsRK  - { alpha, K, delta, tFin, Rfinal, tPico, Rpico }
+ * @returns {string}
+ */
+function htmlInterpretacion(paramsSL, paramsRK) {
+  const { kappa, convergioGS, descripcion, xExacta } = paramsSL;
+  const { alpha, K, delta, Rfinal, tPico, Rpico } = paramsRK;
+
+  // Clasificar condicionamiento
+  const nivelKappa = kappa > 1e6  ? { clase: 'alert--error',   icono: '🔴', texto: 'MUY MAL condicionado', riesgo: 'extremo' }
+                   : kappa > 1e3  ? { clase: 'alert--warning',  icono: '🟠', texto: 'MAL condicionado',     riesgo: 'alto' }
+                   : kappa > 100  ? { clase: 'alert--info',     icono: '🟡', texto: 'moderadamente condicionado', riesgo: 'moderado' }
+                   :                { clase: 'alert--success',   icono: '🟢', texto: 'bien condicionado',    riesgo: 'bajo' };
+
+  // Tasa neta del rumor
+  const tasaNeta = alpha - delta;
+  const rumorCrece = tasaNeta > 0;
+
+  return `
+    <!-- Análisis del sistema lineal -->
+    <div class="alert ${nivelKappa.clase}" role="status">
+      ${nivelKappa.icono} <strong>Número de condición κ(A) = ${
+        isFinite(kappa) ? kappa.toExponential(4) : '∞ (singular)'
+      }</strong> — El sistema está <strong>${nivelKappa.texto}</strong>.
+      Riesgo de amplificación de errores: <strong>${nivelKappa.riesgo}</strong>.
+    </div>
+
+    <div class="card card--escenario-f" style="margin-top: var(--spacing-4);">
+      <div class="card__header">
+        <h3 class="card__title">📊 Análisis combinado del escenario</h3>
+      </div>
+      <div class="card__body">
+
+        <div class="grid grid--auto">
+          <div class="card card--info">
+            <div class="card__body">
+              <strong>Condicionamiento κ(A)</strong><br>
+              <span style="font-size:1.4rem; color:var(--color-alert);">
+                ${isFinite(kappa) ? kappa.toExponential(3) : '∞'}
+              </span><br>
+              <small>
+                ${kappa > 1e6
+                  ? 'Un error de 0.01% en b produce un error de ' +
+                    (kappa * 0.0001 * 100).toFixed(0) + '% en x'
+                  : kappa > 100
+                    ? 'Sensibilidad moderada a perturbaciones'
+                    : 'Sistema estable frente a perturbaciones'}
+              </small>
+            </div>
+          </div>
+
+          <div class="card card--info">
+            <div class="card__body">
+              <strong>Gauss-Seidel</strong><br>
+              <span style="font-size:1.4rem; color:var(--color-primary);">
+                ${convergioGS ? '✅ Convergió' : '❌ No convergió'}
+              </span><br>
+              <small>
+                ${convergioGS
+                  ? 'La red social tiene un estado de equilibrio alcanzable'
+                  : 'La red puede no tener equilibrio estable (sistema inestable)'}
+              </small>
+            </div>
+          </div>
+
+          <div class="card card--info">
+            <div class="card__body">
+              <strong>Rumor al día ${paramsRK.tFin}</strong><br>
+              <span style="font-size:1.4rem; color:var(--color-${Rfinal > 0.5 ? 'alert' : 'secondary'});">
+                ${(Rfinal * 100).toFixed(1)}%
+              </span><br>
+              <small>
+                Pico: ${(Rpico * 100).toFixed(1)}% en día ${tPico.toFixed(1)}
+              </small>
+            </div>
+          </div>
+        </div>
+
+        <p style="margin-top:var(--spacing-4);">
+          <strong>Análisis del sistema de influencias:</strong>
+          La red <em>${descripcion}</em> presenta un número de condición
+          κ = ${isFinite(kappa) ? kappa.toExponential(3) : '∞'}.
+          ${kappa > 1e3
+            ? `Esto significa que un desmentido oficial que reduzca b en un 1%
+               puede producir cambios de hasta <strong>${Math.min(kappa * 0.01, 9999).toFixed(0)}%</strong>
+               en los niveles de adopción del rumor por grupo, haciendo que
+               pequeñas intervenciones tengan efectos impredecibles.`
+            : `El sistema es relativamente estable: intervenciones moderadas
+               en la presión de rumor producen respuestas proporcionales.`}
+        </p>
+
+        <p>
+          <strong>Dinámica temporal (RK4):</strong>
+          Con α = ${alpha} y δ = ${delta}, la tasa neta es
+          <strong>α − δ = ${tasaNeta.toFixed(3)}</strong>.
+          ${rumorCrece
+            ? `El rumor <strong>crece</strong> y alcanza el ${(K*100).toFixed(0)}%
+               de saturación. La ventana óptima de intervención es
+               <strong>antes del día ${Math.max(1, Math.floor(tPico / 2))}</strong>,
+               cuando R aún está por debajo del ${(Rpico * 50).toFixed(0)}%.`
+            : `El rumor <strong>decae</strong> naturalmente gracias al desmentido
+               (δ > α − desmentido efectivo). La adopción máxima fue
+               ${(Rpico * 100).toFixed(1)}% en el día ${tPico.toFixed(1)}.`}
+        </p>
+
+        <p>
+          <strong>Método numérico:</strong> Gauss-Seidel con tolerancia ${paramsSL.tol?.toExponential(0) ?? '1e-6'}
+          para el sistema lineal. RK4 con paso h = ${paramsRK.h} para la EDO logística.
+          Error de truncamiento RK4: O(h⁵) por paso.
+          ${xExacta ? ' La solución exacta x = [1,1,...,1] permite medir el error real introducido por el mal condicionamiento.' : ''}
+        </p>
+
+      </div>
+    </div>
+  `;
+}
+
+// ─────────────────────────────────────────────
+// GRÁFICOS
+// ─────────────────────────────────────────────
+
+let chartInstanciaF1 = null; // Sistema lineal (barras)
+let chartInstanciaF2 = null; // Dinámica rumor (línea)
+
+/**
+ * Gráfico de barras: solución x del sistema lineal.
+ * @param {string}   canvasId
+ * @param {number[]} x
+ * @param {number[]|null} xExacta
+ */
+function renderizarGraficoSL(canvasId, x, xExacta) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  if (chartInstanciaF1) { chartInstanciaF1.destroy(); chartInstanciaF1 = null; }
+
+  const CFG    = window.APP_CONFIG?.CHART_CONFIG ?? {};
+  const colores = CFG.COLORES ?? { PRIMARY: '#3E594F', ACCENT_WARM: '#F29966' };
+
+  const labels = x.map((_, i) => `x${i+1} (Grupo ${i+1})`);
+
+  chartInstanciaF1 = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label:           'Adopción calculada (Gauss-Seidel)',
+          data:            x,
+          backgroundColor: colores.PRIMARY,
+          borderColor:     colores.PRIMARY,
+          borderWidth:     1,
+        },
+        ...(xExacta ? [{
+          label:           'Solución exacta',
+          data:            xExacta,
+          backgroundColor: colores.ACCENT_WARM,
+          borderColor:     colores.ACCENT_WARM,
+          borderWidth:     1,
+        }] : []),
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        title: {
+          display: true,
+          text:    'Nivel de adopción del rumor por grupo social',
+          font:    { size: 13, weight: 'bold' },
+        },
+        legend: { position: 'top' },
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { position: 'top' } },
-        scales: {
-          x: { title: { display: true, text: 'Iteración' } },
-          y: {
-            type: 'logarithmic',
-            title: { display: true, text: 'Error (escala log)' }
-          }
-        }
-      }
-    });
+      scales: {
+        y: { title: { display: true, text: 'Nivel de adopción (x)' } },
+        x: { title: { display: true, text: 'Grupo social' } },
+      },
+    },
+  });
+}
+
+/**
+ * Gráfico de línea: dinámica temporal R(t).
+ * @param {string}   canvasId
+ * @param {number[]} t
+ * @param {number[]} R
+ */
+function renderizarGraficoRumor(canvasId, t, R) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  if (chartInstanciaF2) { chartInstanciaF2.destroy(); chartInstanciaF2 = null; }
+
+  const CFG    = window.APP_CONFIG?.CHART_CONFIG ?? {};
+  const colores = CFG.COLORES ?? { ACCENT_WARM: '#F29966' };
+  const fondos  = CFG.COLORES_FONDO ?? { ACCENT_WARM: 'rgba(242,153,102,0.15)' };
+
+  // Submuestrear a máx 150 puntos
+  const paso    = Math.max(1, Math.floor(t.length / 150));
+  const indices = [];
+  for (let i = 0; i < t.length; i += paso) indices.push(i);
+  if (indices.at(-1) !== t.length - 1) indices.push(t.length - 1);
+
+  chartInstanciaF2 = new Chart(document.getElementById(canvasId), {
+    type: 'line',
+    data: {
+      labels: indices.map(i => t[i].toFixed(1)),
+      datasets: [{
+        label:           'R(t) — Fracción que cree el rumor',
+        data:            indices.map(i => R[i]),
+        borderColor:     colores.ACCENT_WARM,
+        backgroundColor: fondos.ACCENT_WARM,
+        borderWidth:     2.5,
+        pointRadius:     0,
+        fill:            true,
+        tension:         0.3,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        title: {
+          display: true,
+          text:    'Dinámica temporal del rumor — Modelo logístico (RK4)',
+          font:    { size: 13, weight: 'bold' },
+        },
+        legend: { position: 'top' },
+      },
+      scales: {
+        x: { title: { display: true, text: 'Tiempo (días)' },
+             ticks: { maxTicksLimit: 12 } },
+        y: { title: { display: true, text: 'Fracción de adopción R(t)' },
+             min: 0, max: 1 },
+      },
+    },
+  });
+}
+
+// ─────────────────────────────────────────────
+// LEER FORMULARIO Y VALIDAR
+// ─────────────────────────────────────────────
+
+/**
+ * Lee y valida todos los campos del formulario.
+ * @returns {{ params: Object|null, errores: string[] }}
+ */
+function leerFormulario() {
+  const errores = [];
+  const red     = document.getElementById('f-red')?.value ?? 'crisis4';
+  const tolGS   = parseFloat(document.getElementById('f-tol-gs')?.value);
+  const R0      = parseFloat(document.getElementById('f-R0')?.value);
+  const alpha   = parseFloat(document.getElementById('f-alpha')?.value);
+  const K       = parseFloat(document.getElementById('f-K')?.value);
+  const delta   = parseFloat(document.getElementById('f-delta')?.value);
+  const tFin    = parseFloat(document.getElementById('f-tFin')?.value);
+  const h       = parseFloat(document.getElementById('f-h')?.value);
+
+  if (isNaN(tolGS) || tolGS <= 0) errores.push('Tolerancia Gauss-Seidel debe ser > 0.');
+  if (isNaN(R0) || R0 <= 0 || R0 >= 1) errores.push('R₀ debe estar en (0, 1).');
+  if (isNaN(alpha) || alpha <= 0) errores.push('α debe ser > 0.');
+  if (isNaN(K) || K <= 0 || K > 1) errores.push('K debe estar en (0, 1].');
+  if (isNaN(delta) || delta < 0) errores.push('δ debe ser ≥ 0.');
+  if (isNaN(tFin) || tFin < 5) errores.push('Días a simular debe ser ≥ 5.');
+  if (isNaN(h) || h <= 0 || h > 1) errores.push('Paso h debe estar entre 0.01 y 1.');
+
+  // Leer sistema lineal
+  let A = null, b = null, descripcion = '', xExacta = null;
+
+  if (red === 'manual') {
+    try {
+      A = [[1,2,3],[1,2,3],[1,2,3]].map((_, i) =>
+        [1,2,3].map(j => parseFloat(document.getElementById(`f-a${i+1}${j}`)?.value))
+      );
+      b = [1,2,3].map(i => parseFloat(document.getElementById(`f-b${i}`)?.value));
+      if (A.flat().some(isNaN) || b.some(isNaN))
+        errores.push('Todos los valores de la matriz y vector b deben ser números.');
+      descripcion = 'Matriz manual 3×3';
+    } catch {
+      errores.push('Error leyendo la matriz manual.');
+    }
+  } else {
+    const n = red === 'hilbert4' ? 4 : red === 'hilbert3' ? 3 : undefined;
+    const tipo = red.startsWith('hilbert') ? 'hilbert' : red;
+    const predefinida = obtenerMatrizPredefinida(tipo, n);
+    if (!predefinida) {
+      errores.push('Red predefinida no reconocida.');
+    } else {
+      A = predefinida.A;
+      b = predefinida.b;
+      descripcion = predefinida.descripcion;
+      xExacta = predefinida.xExacta;
+    }
   }
 
-  // ─── Gráfico perturbaciones ───────────────────────────────────
-  function _renderizarGraficoPerturbacion(analisisPerturb, kappa) {
-    const canvas = document.getElementById(CHART_PERTURB_ID);
-    if (!canvas) return;
-    if (chartPerturb) { chartPerturb.destroy(); chartPerturb = null; }
+  if (errores.length > 0) return { params: null, errores };
 
-    const labels  = analisisPerturb.map(r => `${(r.errRelB * 100).toFixed(2)}%`);
-    const datasets = [];
+  return {
+    params: { A, b, descripcion, xExacta, tolGS, maxIter: 200,
+              R0, alpha, K, delta, tFin, h },
+    errores: [],
+  };
+}
 
-    // Error real en x
-    if (analisisPerturb.some(r => r.errRelX !== null)) {
-      datasets.push({
-        label: 'Error real en x (%)',
-        data: analisisPerturb.map(r =>
-          r.errRelX !== null ? parseFloat((r.errRelX * 100).toFixed(6)) : null
-        ),
-        borderColor: '#D97059',
-        backgroundColor: 'transparent',
-        borderWidth: 2.5,
-        pointRadius: 4,
-        tension: 0.3
-      });
-    }
+/** Muestra los errores en el DOM. */
+function mostrarErrores(errores) {
+  const el = document.getElementById('f-errores');
+  if (!el) return;
+  el.innerHTML = errores.length === 0 ? '' : `
+    <div class="alert alert--error" role="alert">
+      <ul style="margin:0; padding-left:var(--spacing-4);">
+        ${errores.map(e => `<li>${e}</li>`).join('')}
+      </ul>
+    </div>
+  `;
+}
 
-    // Cota teórica κ·‖Δb‖/‖b‖
-    if (isFinite(kappa)) {
-      datasets.push({
-        label: `Cota κ·‖Δb‖/‖b‖ (κ=${kappa.toExponential(2)})`,
-        data: analisisPerturb.map(r =>
-          r.ampEsperada !== null ? parseFloat((r.ampEsperada * 100).toFixed(6)) : null
-        ),
-        borderColor: '#F29966',
-        backgroundColor: 'transparent',
-        borderWidth: 1.5,
-        borderDash: [6, 3],
-        pointRadius: 0,
-        tension: 0.3
-      });
-    }
+// ─────────────────────────────────────────────
+// MANEJO DEL SELECTOR DE RED
+// ─────────────────────────────────────────────
 
-    chartPerturb = renderizarGrafico(CHART_PERTURB_ID, {
-      type: 'line',
-      data: { labels, datasets },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { position: 'top' } },
-        scales: {
-          x: { title: { display: true, text: 'Error relativo en b (%)' } },
-          y: {
-            title: { display: true, text: 'Error relativo en x (%)' },
-            beginAtZero: true
-          }
-        }
-      }
-    });
-  }
+function actualizarVistaRed() {
+  const red    = document.getElementById('f-red')?.value;
+  const manual = document.getElementById('f-matriz-manual');
+  if (manual) manual.hidden = (red !== 'manual');
+}
 
-  // ─── Tabla de iteraciones ─────────────────────────────────────
-  function _renderizarTablaIteraciones(resGS) {
-    const contenedor = document.getElementById('tabla-iter-f');
-    if (!contenedor) return;
+// ─────────────────────────────────────────────
+// MANEJADOR PRINCIPAL
+// ─────────────────────────────────────────────
 
-    if (!resGS.historial || resGS.historial.length === 0) {
-      contenedor.innerHTML = `<div class="alert alert--warning">Sin historial de iteraciones.</div>`;
-      return;
-    }
+function calcularEscenarioF() {
+  const { params, errores } = leerFormulario();
+  mostrarErrores(errores);
+  if (!params) return;
 
-    // Submuestra: máximo 15 filas
-    const total = resGS.historial.length;
-    const paso  = Math.max(1, Math.floor(total / 15));
-    const seleccionados = resGS.historial.filter((_, i) =>
-      i === 0 || i === total - 1 || i % paso === 0
+  const { A, b, descripcion, xExacta, tolGS, maxIter,
+          R0, alpha, K, delta, tFin, h } = params;
+
+  // ── PARTE 1: Sistema lineal ──
+  const resultGS  = gaussSeidel(A, b, tolGS, maxIter);
+  const { kappa, normA, normAinv } = numeroCondicion(A);
+  const x = resultGS.solucion ?? new Array(A.length).fill(0);
+
+  // ── PARTE 2: Dinámica RK4 ──
+  const F = modeloRumor(alpha, K, delta);
+  const { t, R } = rk4Escalar(F, R0, tFin, h);
+
+  // Pico del rumor
+  let Rpico = 0, tPico = 0;
+  R.forEach((Ri, i) => { if (Ri > Rpico) { Rpico = Ri; tPico = t[i]; } });
+  const Rfinal = R.at(-1);
+
+  // ── Gráficos ──
+  renderizarGraficoSL('f-chart-sl', x, xExacta);
+  renderizarGraficoRumor('f-chart-rumor', t, R);
+
+  // ── Tablas ──
+  const contSL = document.getElementById('f-tabla-sl');
+  if (contSL) contSL.innerHTML = htmlTablaSistema(A, b, x, xExacta);
+
+  const contGS = document.getElementById('f-tabla-gs');
+  if (contGS) contGS.innerHTML = htmlTablaGaussSeidel(resultGS.iteraciones, A.length);
+
+  const contRumor = document.getElementById('f-tabla-rumor');
+  if (contRumor) contRumor.innerHTML = htmlTablaRumor(t, R);
+
+  // ── Interpretación ──
+  const contInterp = document.getElementById('f-interpretacion');
+  if (contInterp)
+    contInterp.innerHTML = htmlInterpretacion(
+      { kappa, convergioGS: resultGS.convergió, descripcion, xExacta, tol: tolGS },
+      { alpha, K, delta, tFin, Rfinal, tPico, Rpico, h }
     );
 
-    const n = resGS.x?.length ?? 0;
-    const filas = seleccionados.map(h => {
-      const fila = { 'Iteración': String(h.iteracion) };
-      h.x.forEach((xi, i) => { fila[`x${i + 1}`] = xi.toFixed(8); });
-      fila['‖error‖'] = h.error.toExponential(6);
-      return fila;
-    });
+  // ── Mostrar resultados ──
+  const resultados = document.getElementById('f-resultados');
+  if (resultados) resultados.hidden = false;
+}
 
-    const columnas = ['Iteración', ...Array.from({ length: n }, (_, i) => `x${i + 1}`), '‖error‖'];
+function limpiarEscenarioF() {
+  document.getElementById('form-escenario-f')?.reset();
+  actualizarVistaRed();
 
-    renderizarTabla('tabla-iter-f', {
-      columnas,
-      filas,
-      columnasNumericas: [...Array.from({ length: n }, (_, i) => `x${i + 1}`), '‖error‖'],
-      resaltarUltimaFila: true
-    });
-  }
+  const resultados = document.getElementById('f-resultados');
+  if (resultados) resultados.hidden = true;
 
-  // ─── Tabla de residuales ──────────────────────────────────────
-  function _renderizarTablaResidual(n, b, { resGS, resLU, residualGS, residualLU }) {
-    const contenedor = document.getElementById('tabla-residual-f');
-    if (!contenedor) return;
+  const errores = document.getElementById('f-errores');
+  if (errores) errores.innerHTML = '';
 
-    const filas = Array.from({ length: n }, (_, i) => ({
-      'Ecuación':    `Zona ${i + 1}`,
-      'b[i]':        b[i].toFixed(6),
-      'r LU':        residualLU  ? residualLU[i].toExponential(6)  : '—',
-      'r Gauss-Seidel': residualGS ? residualGS[i].toExponential(6) : '—'
-    }));
+  [chartInstanciaF1, chartInstanciaF2].forEach(c => {
+    if (c) { c.destroy(); }
+  });
+  chartInstanciaF1 = null;
+  chartInstanciaF2 = null;
+}
 
-    renderizarTabla('tabla-residual-f', {
-      columnas: ['Ecuación', 'b[i]', 'r LU', 'r Gauss-Seidel'],
-      filas,
-      columnasNumericas: ['b[i]', 'r LU', 'r Gauss-Seidel']
-    });
-  }
+// ─────────────────────────────────────────────
+// REGISTRO DE EVENTOS
+// ─────────────────────────────────────────────
 
-  // ─── Interpretación ───────────────────────────────────────────
-  function _renderizarInterpretacion(A, b, n, { kappa, resGS, resLU, errRelPerturbacion, analisisPerturb }, delta) {
-    const contenedor = document.getElementById('interpretacion-f');
-    if (!contenedor) return;
+function registrarEventosF() {
+  document.getElementById('f-btn-calcular')
+    ?.addEventListener('click', calcularEscenarioF);
+  document.getElementById('f-btn-limpiar')
+    ?.addEventListener('click', limpiarEscenarioF);
+  document.getElementById('f-red')
+    ?.addEventListener('change', actualizarVistaRed);
+}
 
-    const malCond   = !isFinite(kappa) || kappa > 1000;
-    const digPerdidos = isFinite(kappa) && kappa > 1
-      ? Math.floor(Math.log10(kappa))
-      : 0;
+// ─────────────────────────────────────────────
+// FUNCIÓN PRINCIPAL DE RENDERIZADO
+// ─────────────────────────────────────────────
 
-    const amplMax = analisisPerturb
-      .filter(r => r.amplificacion !== null)
-      .reduce((mx, r) => Math.max(mx, r.amplificacion), 0);
+function escenarioF() {
+  setTimeout(registrarEventosF, 0);
 
-    contenedor.innerHTML = `
-      <h3>¿Qué significa el número de condición en este contexto?</h3>
-      <p>
-        El número de condición κ(A) ≈ <strong>${isFinite(kappa) ? kappa.toExponential(4) : '∞'}</strong>
-        mide la sensibilidad del sistema: si los datos de tensión social <strong>b</strong>
-        tienen un error relativo de ε, los índices de pánico calculados <strong>x</strong>
-        pueden tener un error de hasta <strong>κ(A)·ε</strong>.
-        ${isFinite(kappa) && digPerdidos > 0
-          ? `Con este κ, se pierden aproximadamente <strong>${digPerdidos} dígitos</strong> de precisión.`
-          : ''}
-      </p>
+  return `
+    <section
+      class="seccion-contenido"
+      id="vista-escenario-f"
+      aria-labelledby="titulo-f"
+    >
 
-      <h3>Implicaciones para la gestión de crisis</h3>
-      <ul>
-        ${malCond
-          ? `<li><strong>Peligro:</strong> Las estimaciones de pánico por zona son
-              <strong>poco confiables</strong>. Un error del 1% en los sensores de
-              tensión social puede generar errores del
-              ${isFinite(kappa) ? (kappa * 0.01 * 100).toFixed(0) + '%' : 'orden infinito'}
-              en los índices calculados.</li>
-            <li>Considerar <strong>regularización</strong> del sistema (Tikhonov) o
-              rediseñar la red de monitoreo para obtener una matriz mejor condicionada.</li>`
-          : `<li>El sistema está bien condicionado: las estimaciones de pánico son
-              <strong>estables y confiables</strong> para la toma de decisiones.</li>`}
-        <li>
-          La amplificación de error observada en el análisis de perturbaciones fue de
-          <strong>${amplMax.toFixed(2)}×</strong> respecto al error en los datos.
-          ${amplMax > 10
-            ? ' — significativamente mayor que 1, confirma el mal condicionamiento.'
-            : ' — dentro de límites aceptables.'}
-        </li>
-        <li>
-          <strong>Gauss-Seidel</strong>
-          ${resGS.convergio
-            ? `convergió en <strong>${resGS.iteraciones}</strong> iteraciones.
-              Este método solo es confiable si la matriz es <em>diagonal dominante</em>.`
-            : `<strong>no convergió</strong>. Esto indica que la matriz no es
-              diagonal dominante — usar <strong>LU</strong> como método de referencia.`}
-        </li>
-      </ul>
+      <!-- ENCABEZADO -->
+      <div class="seccion-contenido__header">
+        <h1 id="titulo-f">📣 Escenario F: Difusión de Rumores y Pánico Social</h1>
+        <p class="seccion-contenido__subtitulo">
+          Sistemas lineales mal condicionados + modelo logístico de rumor (RK4)
+        </p>
+      </div>
 
-      <h3>Comparación de métodos</h3>
-      <ul>
-        <li>
-          <strong>Gauss-Seidel (iterativo):</strong> Eficiente para sistemas grandes y
-          dispersos con diagonal dominante. Convergencia garantizada si ρ(D⁻¹(L+U)) &lt; 1.
-          No recomendado para matrices mal condicionadas.
-        </li>
-        <li>
-          <strong>Descomposición LU (directo):</strong> Factoriza A = L·U una sola vez y
-          resuelve por sustitución hacia adelante/atrás. Estable con pivoteo parcial.
-          Recomendado como referencia cuando el condicionamiento es dudoso.
-        </li>
-      </ul>
-    `;
-  }
+      <!-- CONTEXTO -->
+      <div class="card card--info" style="margin-bottom: var(--spacing-5);">
+        <div class="card__body">
+          <p>
+            Este escenario combina dos análisis complementarios. El
+            <strong>sistema Ax = b</strong> modela la red de influencia entre
+            grupos sociales, donde el número de condición κ(A) mide cuán
+            sensible es la adopción del rumor ante desmentidos oficiales.
+            La <strong>EDO logística</strong> modela la evolución temporal
+            del rumor, resuelta con RK4.
+          </p>
+          <p style="font-family: monospace; text-align: center; margin: var(--spacing-2) 0;">
+            Ax = b &nbsp;(influencias) &nbsp;|&nbsp;
+            dR/dt = α·R·(1−R/K) − δ·R &nbsp;(dinámica)
+          </p>
+        </div>
+      </div>
 
-  // ─── Restablecer ──────────────────────────────────────────────
-  function _restablecerTodo() {
-    limpiarErrores(['error-tol-f', 'error-iter-f', 'error-general-f']);
+      <!-- FORMULARIO -->
+      <div class="card" style="margin-bottom: var(--spacing-5);">
+        <div class="card__header">
+          <h2 class="card__title">⚙️ Parámetros del modelo</h2>
+        </div>
+        <div class="card__body">
+          <div id="f-errores" role="alert" aria-live="polite"></div>
+          <form id="form-escenario-f" novalidate>
+            ${htmlFormulario()}
+          </form>
+        </div>
+      </div>
 
-    const sel = document.getElementById('sistema-preset');
-    if (sel) { sel.value = 'bien_condicionado'; _cargarSistema('bien_condicionado'); }
+      <!-- RESULTADOS -->
+      <div id="f-resultados" hidden>
 
-    document.getElementById('tolerancia-f') && (document.getElementById('tolerancia-f').value = '0.0001');
-    document.getElementById('max-iter-f')   && (document.getElementById('max-iter-f').value = '100');
-    document.getElementById('perturbacion-f') && (document.getElementById('perturbacion-f').value = '1');
+        <!-- INTERPRETACIÓN -->
+        <div id="f-interpretacion" style="margin-bottom: var(--spacing-5);"></div>
 
-    const divRes = document.getElementById('resultados-f');
-    if (divRes) divRes.hidden = true;
+        <!-- GRÁFICO SISTEMA LINEAL -->
+        <div class="card" style="margin-bottom: var(--spacing-5);">
+          <div class="card__header">
+            <h2 class="card__title">📊 Adopción del rumor por grupo social (Ax = b)</h2>
+          </div>
+          <div class="card__body">
+            <div class="grafico-contenedor" style="height: 320px;">
+              <canvas id="f-chart-sl"
+                aria-label="Gráfico de adopción de rumor por grupo social"></canvas>
+            </div>
+          </div>
+        </div>
 
-    [chartRadar, chartCond, chartPerturb].forEach(c => { if (c) c.destroy(); });
-    chartRadar = chartCond = chartPerturb = null;
+        <!-- GRÁFICO DINÁMICA RK4 -->
+        <div class="card" style="margin-bottom: var(--spacing-5);">
+          <div class="card__header">
+            <h2 class="card__title">📈 Dinámica temporal del rumor R(t)</h2>
+          </div>
+          <div class="card__body">
+            <div class="grafico-contenedor" style="height: 320px;">
+              <canvas id="f-chart-rumor"
+                aria-label="Gráfico de dinámica temporal del rumor"></canvas>
+            </div>
+          </div>
+        </div>
 
-    mostrarNotificacion('Escenario F restablecido', 'info');
-  }
+        <!-- TABLA SOLUCIÓN SISTEMA LINEAL -->
+        <div class="card" style="margin-bottom: var(--spacing-5);">
+          <div class="card__header">
+            <h2 class="card__title">📋 Solución del sistema Ax = b</h2>
+          </div>
+          <div class="card__body" id="f-tabla-sl"></div>
+        </div>
 
-})();
+        <!-- TABLA GAUSS-SEIDEL -->
+        <div class="card" style="margin-bottom: var(--spacing-5);">
+          <div class="card__header">
+            <h2 class="card__title">📋 Iteraciones Gauss-Seidel</h2>
+          </div>
+          <div class="card__body" id="f-tabla-gs"></div>
+        </div>
+
+        <!-- TABLA RUMOR RK4 -->
+        <div class="card">
+          <div class="card__header">
+            <h2 class="card__title">📋 Dinámica R(t) — RK4</h2>
+          </div>
+          <div class="card__body" id="f-tabla-rumor"></div>
+        </div>
+
+      </div>
+
+    </section>
+  `;
+}
+
+// ─────────────────────────────────────────────
+// EXPORTACIÓN GLOBAL
+// ─────────────────────────────────────────────
+
+window.escenarioF = escenarioF;
