@@ -235,6 +235,345 @@ function construirModelo(modelo, p, U) {
 }
 
 // ─────────────────────────────────────────────
+// EJEMPLOS PRECARGADOS DESDE ejemplos.json
+// ─────────────────────────────────────────────
+
+/**
+ * Devuelve los ejemplos del escenarioE desde window.DATOS_EJEMPLOS.
+ * Si no están disponibles, usa un fallback hardcodeado.
+ * @returns {Object[]}
+ */
+function obtenerEjemplosDisponibles() {
+  const datos = window.DATOS_EJEMPLOS?.escenarios?.escenarioE?.ejemplos;
+  if (datos && datos.length > 0) return datos;
+
+  // Fallback si ejemplos.json no está cargado
+  return [
+    {
+      id: 'E0',
+      nombre: 'Decaimiento exponencial — fallback',
+      dificultad: 'basico',
+      descripcion: 'Ejemplo cargado localmente (ejemplos.json no disponible).',
+      parametros: {
+        funcion: 'exponencial',
+        A: 5000,
+        k: 0.05,
+        intervalo: [0, 60],
+        x0_newton: 30,
+        tolerancia: 1e-6,
+        max_iteraciones: 100,
+        metodo: 'ambos',
+      },
+      descripcion_funcion: 'f(t) = 5000 · e^(-0.05·t)',
+      interpretacion: 'Stock con decaimiento exponencial. Umbral en 500 unidades.',
+      unidades_x: 'días',
+    },
+  ];
+}
+
+/**
+ * Construye la expresión JavaScript para el modelo personalizado
+ * a partir de los parámetros del JSON del escenarioE.
+ *
+ * Los ejemplos E1-E4 del JSON modelan funciones g(x)=0 directamente,
+ * no inventarios f(t)-U. Se mapean así:
+ *
+ *   E1 (lineal):       g(x) = a_coef*x + b_coef  → expresión: a_coef*t + b_coef + U
+ *   E2 (cuadratica):   g(x) = a*x² + b*x + c     → expresión directa como f(t)
+ *   E3 (trascendente): g(x) = x*e^x - 3          → expresión: t*Math.exp(t) - 3 + U
+ *   E4 (trascendente): g(x) = cos(x) - x         → expresión: Math.cos(t) - t + U  (o -t)
+ *
+ * Dado que el formulario siempre resta U al calcular g(t) = f(t) - U,
+ * la expresión del campo "personalizado" debe ser f(t) tal que f(t)-U = g_json(x).
+ * Por tanto: f(t) = g_json(t) + U.
+ *
+ * @param {Object} ej - ejemplo del JSON
+ * @returns {{ expresion: string, umbral: number, intervalo: number[], x0: number }}
+ */
+function mapearEjemploAFormulario(ej) {
+  const p   = ej.parametros;
+  const tol = p.tolerancia ?? 1e-6;
+  const x0  = p.x0_newton ?? (p.intervalo ? (p.intervalo[0] + p.intervalo[1]) / 2 : 1.5);
+  const tMax = p.intervalo ? p.intervalo[1] : 60;
+
+  // Para cada tipo de función del JSON determinamos:
+  // · modelo del formulario (exponencial / lineal / logistico / personalizado)
+  // · parámetros concretos de ese modelo
+  // · umbral U (siempre 0 para funciones g(x)=0; el formulariotiene U=0 ⟹ g(t)=f(t)-0=f(t))
+
+  switch (p.funcion) {
+
+    // ── Modelos del formulario con correspondencia directa ────────────────
+
+    case 'exponencial':
+      // f(t) = A · e^(-k·t), umbral U desde el JSON o por defecto 500
+      return {
+        modelo:     'exponencial',
+        A:          p.A ?? 5000,
+        k:          p.k ?? 0.05,
+        umbral:     p.umbral ?? 500,
+        tMax,
+        x0,
+        tolerancia: tol,
+      };
+
+    case 'lineal':
+      // JSON E1: g(x) = a_coef*x + b_coef  →  f(t) = a_coef*t + b_coef, U = 0
+      // Reescribimos como modelo lineal del formulario: f(t) = A - r·t
+      // Si a_coef < 0 (función decreciente): A = b_coef, r = -a_coef
+      // Si a_coef >= 0 usamos personalizado para no forzar r > 0.
+      if (p.a_coef !== undefined && p.a_coef < 0) {
+        return {
+          modelo:     'lineal',
+          A:          p.b_coef ?? 100,
+          r:          -p.a_coef,
+          umbral:     0,
+          tMax,
+          x0,
+          tolerancia: tol,
+        };
+      }
+      // Si no podemos mapear directo, caemos a personalizado
+      return {
+        modelo:     'personalizado',
+        expresion:  `(${p.a_coef ?? -2.5}) * t + (${p.b_coef ?? 100})`,
+        umbral:     0,
+        tMax,
+        x0,
+        tolerancia: tol,
+      };
+
+    // ── Funciones trascendentes → siempre personalizado ──────────────────
+
+    case 'trascendente_1':
+      // g(x) = x·e^x - 3  →  f(t) = t*Math.exp(t) - 3,  U = 0
+      // (el formulario calcula g(t) = f(t) - U = f(t) - 0 = f(t))
+      return {
+        modelo:     'personalizado',
+        expresion:  't * Math.exp(t) - 3',
+        umbral:     0,
+        tMax:       Math.max(tMax, 5),
+        x0,
+        tolerancia: tol,
+      };
+
+    case 'trascendente_2':
+      // g(x) = cos(x) - x  →  f(t) = Math.cos(t) - t,  U = 0
+      return {
+        modelo:     'personalizado',
+        expresion:  'Math.cos(t) - t',
+        umbral:     0,
+        tMax:       Math.max(tMax, 5),
+        x0,
+        tolerancia: tol,
+      };
+
+    case 'cuadratica': {
+      // g(x) = a*x² + b*x + c  →  f(t) = coeficientes[0]*t² + coeficientes[1]*t + coeficientes[2]
+      const [a, b, c] = p.coeficientes ?? [1, -8, 12];
+      return {
+        modelo:    'personalizado',
+        expresion: `(${a}) * t * t + (${b}) * t + (${c})`,
+        umbral:    0,
+        tMax,
+        x0,
+        tolerancia: tol,
+      };
+    }
+
+    // ── Fallback genérico: personalizado con descripcion_funcion ─────────
+    default:
+      return {
+        modelo:     'personalizado',
+        expresion:  ej.descripcion_funcion
+                      ?.replace(/f\(x\)\s*=\s*/i, '')
+                      ?.replace(/\^/g, '**')
+                      ?.replace(/e\^/g, 'Math.exp(1)**')
+                      ?? '',
+        umbral:     0,
+        tMax:       Math.max(tMax, 5),
+        x0,
+        tolerancia: tol,
+      };
+  }
+}
+
+/**
+ * Puebla el <select> de ejemplos precargados.
+ * Patrón idéntico a escenarioA.js y escenarioD.js.
+ */
+function poblarSelectEjemplos() {
+  const select = document.getElementById('e-select-ejemplo');
+  if (!select) return;
+
+  const ejemplos = obtenerEjemplosDisponibles();
+
+  // Limpiar opciones previas (excepto la primera vacía)
+  while (select.options.length > 1) select.remove(1);
+
+  const iconos = { basico: '🟢', intermedio: '🟡', avanzado: '🔴' };
+
+  ejemplos.forEach((ej) => {
+    const option = document.createElement('option');
+    option.value = ej.id;
+    option.textContent = `${iconos[ej.dificultad] ?? '⚪'} [${ej.id}] ${ej.nombre}`;
+    select.appendChild(option);
+  });
+
+  // Preseleccionar el primero
+  if (ejemplos.length > 0) select.value = ejemplos[0].id;
+
+  // Actualizar badge de dificultad al cambiar selección
+  select.addEventListener('change', () => {
+    const lista = obtenerEjemplosDisponibles();
+    const sel   = lista.find(e => e.id === select.value);
+    const span  = document.getElementById('e-ejemplo-dificultad');
+    if (span) span.textContent = sel ? `Dificultad: ${sel.dificultad ?? '—'}` : '';
+  });
+}
+
+/**
+ * Carga el ejemplo seleccionado en todos los campos del formulario.
+ * Usa mapearEjemploAFormulario() para traducir parámetros del JSON
+ * a los inputs concretos del escenarioE.
+ */
+function cargarEjemploSeleccionado() {
+  const select   = document.getElementById('e-select-ejemplo');
+  const idSel    = select?.value;
+  const ejemplos = obtenerEjemplosDisponibles();
+  const ejemplo  = idSel
+    ? ejemplos.find(e => e.id === idSel)
+    : ejemplos[0];
+
+  if (!ejemplo) {
+    mostrarNotificacion('No hay ejemplos disponibles.', 'warning');
+    return;
+  }
+
+  // Traducir parámetros del JSON al vocabulario del formulario
+  const m = mapearEjemploAFormulario(ejemplo);
+
+  // ── 1. Modelo ────────────────────────────────────────────────────────────
+  const selectModelo = document.getElementById('e-modelo');
+  if (selectModelo) selectModelo.value = m.modelo;
+  actualizarVistaModelo();
+
+  // ── 2. Parámetros del modelo ─────────────────────────────────────────────
+
+  if (m.modelo === 'exponencial') {
+    const inpA    = document.getElementById('e-exp-A');
+    const inpK    = document.getElementById('e-exp-k');
+    const inpTmax = document.getElementById('e-exp-tmax');
+    if (inpA)    inpA.value    = m.A;
+    if (inpK)    inpK.value    = m.k;
+    if (inpTmax) inpTmax.value = m.tMax;
+
+  } else if (m.modelo === 'lineal') {
+    const inpA    = document.getElementById('e-lin-A');
+    const inpR    = document.getElementById('e-lin-r');
+    const inpTmax = document.getElementById('e-lin-tmax');
+    if (inpA)    inpA.value    = m.A;
+    if (inpR)    inpR.value    = m.r;
+    if (inpTmax) inpTmax.value = m.tMax;
+
+  } else if (m.modelo === 'logistico') {
+    const inpA    = document.getElementById('e-log-A');
+    const inpK    = document.getElementById('e-log-k');
+    const inpT0   = document.getElementById('e-log-t0');
+    const inpTmax = document.getElementById('e-log-tmax');
+    if (inpA)    inpA.value    = m.A;
+    if (inpK)    inpK.value    = m.k;
+    if (inpT0)   inpT0.value   = m.t0;
+    if (inpTmax) inpTmax.value = m.tMax;
+
+  } else if (m.modelo === 'personalizado') {
+    const inpExpr = document.getElementById('e-per-expr');
+    const inpTmax = document.getElementById('e-per-tmax');
+    if (inpExpr) inpExpr.value = m.expresion;
+    if (inpTmax) inpTmax.value = m.tMax;
+  }
+
+  // ── 3. Parámetros comunes ────────────────────────────────────────────────
+  const inpUmbral = document.getElementById('e-umbral');
+  const inpX0     = document.getElementById('e-x0');
+  const inpTol    = document.getElementById('e-tol');
+  if (inpUmbral) inpUmbral.value = m.umbral;
+  if (inpX0)     inpX0.value     = m.x0;
+  if (inpTol)    inpTol.value    = m.tolerancia;
+
+  // ── 4. Descripción contextual ────────────────────────────────────────────
+  const divDesc = document.getElementById('e-descripcion-ejemplo');
+  const lista   = document.getElementById('e-lista-descripcion');
+
+  if (lista && divDesc) {
+    const contexto = ejemplo.descripcion_contexto ?? ejemplo.descripcion;
+
+    const itemsContexto = Array.isArray(contexto)
+      ? contexto.map(d => `<li>${d}</li>`).join('')
+      : `<li>${contexto}</li>`;
+
+    const itemFuncion = ejemplo.descripcion_funcion
+      ? `<li><strong>Función g(x) = 0:</strong> <code>${ejemplo.descripcion_funcion}</code></li>`
+      : '';
+
+    const itemInterp = ejemplo.interpretacion
+      ? `<li style="margin-top: var(--spacing-2);">
+           <strong>Interpretación:</strong> ${ejemplo.interpretacion}
+           ${ejemplo.unidades_x ? `<em>(eje x en ${ejemplo.unidades_x})</em>` : ''}
+         </li>`
+      : '';
+
+    const itemRaiz = ejemplo.raiz_esperada !== undefined
+      ? `<li>
+           <strong>Raíz esperada:</strong>
+           t* ≈ ${Number(ejemplo.raiz_esperada).toFixed(4)}
+           ${ejemplo.unidades_x ? ejemplo.unidades_x : ''}
+         </li>`
+      : '';
+
+    const itemModelo = `
+      <li>
+        <strong>Mapeado al formulario como:</strong>
+        modelo <em>${m.modelo}</em>
+        ${m.modelo === 'personalizado'
+          ? `, expresión: <code>${m.expresion}</code>, U = ${m.umbral}`
+          : `, U = ${m.umbral}`
+        }
+      </li>`;
+
+    lista.innerHTML = itemsContexto + itemFuncion + itemInterp + itemRaiz + itemModelo;
+    divDesc.style.display = 'block';
+  }
+
+  // ── 5. Ocultar resultados anteriores ─────────────────────────────────────
+  const resultados = document.getElementById('e-resultados');
+  if (resultados) resultados.hidden = true;
+
+  const erroresDiv = document.getElementById('e-errores');
+  if (erroresDiv) erroresDiv.innerHTML = '';
+
+  mostrarNotificacion(`✅ "${ejemplo.nombre}" cargado`, 'success');
+}
+
+// ─────────────────────────────────────────────
+// NOTIFICACIONES (helper local)
+// ─────────────────────────────────────────────
+
+/**
+ * Muestra una notificación usando window.Notificaciones si está disponible.
+ * @param {string} mensaje
+ * @param {'info'|'success'|'error'|'warning'} tipo
+ */
+function mostrarNotificacion(mensaje, tipo = 'info') {
+  const n = window.Notificaciones;
+  if (!n) return;
+  if (tipo === 'success') return n.exito(mensaje);
+  if (tipo === 'error')   return n.error(mensaje);
+  if (tipo === 'warning') return n.advertencia(mensaje);
+  return n.info(mensaje);
+}
+
+// ─────────────────────────────────────────────
 // GENERACIÓN DE PUNTOS PARA GRÁFICO
 // ─────────────────────────────────────────────
 
@@ -262,10 +601,41 @@ function generarPuntosGrafico(f, tMax, nPuntos = 300) {
 
 /**
  * HTML del formulario de parámetros.
+ * Incluye el bloque de ejemplos precargados.
  * @returns {string}
  */
 function htmlFormulario() {
   return `
+    <!-- ══════════════════════════════════════════════════
+         BLOQUE DE EJEMPLOS PRECARGADOS (patrón escenarioA)
+         ══════════════════════════════════════════════════ -->
+    <div class="form-row form-row--2-col" style="margin-bottom: var(--spacing-3);">
+      <div class="form-group">
+        <label class="form-label" for="e-select-ejemplo">Ejemplo precargado</label>
+        <select class="form-input" id="e-select-ejemplo">
+          <option value="">— Selecciona un ejemplo —</option>
+        </select>
+        <span class="form-help" id="e-ejemplo-dificultad"></span>
+      </div>
+      <div class="form-group" style="display:flex; align-items:flex-end; gap: var(--spacing-2);">
+        <button type="button" class="btn btn--secondary btn--small" id="e-btn-ejemplo">
+          📋 Cargar Ejemplo
+        </button>
+        <button type="button" class="btn btn--secondary btn--small" id="e-btn-limpiar-ejemplo">
+          🗑️ Limpiar
+        </button>
+      </div>
+    </div>
+
+    <!-- Descripción contextual del ejemplo cargado -->
+    <div id="e-descripcion-ejemplo" class="alert alert--info mb-3" style="display:none;">
+      <strong>Contexto del ejemplo cargado:</strong>
+      <ul id="e-lista-descripcion" class="mt-1"></ul>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════
+         SELECTOR DE MODELO
+         ══════════════════════════════════════════════════ -->
     <div class="form-group">
       <label class="form-label" for="e-modelo">Modelo de inventario</label>
       <select class="form-input" id="e-modelo" name="modelo">
@@ -345,6 +715,7 @@ function htmlFormulario() {
             aria-describedby="e-per-expr-help">
           <span class="form-help" id="e-per-expr-help">
             Usa t como variable. Operadores: +, −, *, /, ** o ^, Math.exp(), Math.log(), etc.
+            Para funciones g(x) = 0, escribe f(t) = g(t) y ajusta U = 0.
           </span>
         </div>
         <div class="form-group">
@@ -359,7 +730,7 @@ function htmlFormulario() {
       <div class="form-group">
         <label class="form-label" for="e-umbral">Umbral crítico (U)</label>
         <input class="form-input" type="number" id="e-umbral" value="500" min="0" step="1">
-        <span class="form-help">Nivel mínimo aceptable de inventario</span>
+        <span class="form-help">Nivel mínimo aceptable. Usar U=0 para raíces de g(t)=0</span>
       </div>
       <div class="form-group">
         <label class="form-label" for="e-x0">Punto inicial Newton (t₀)</label>
@@ -526,9 +897,9 @@ function htmlInterpretacion(rBis, rNewt, U, descripcionModelo) {
     `;
   }
 
-  const tCritico = rPrincipal.raiz;
+  const tCritico   = rPrincipal.raiz;
   const diasEnteros = Math.floor(tCritico);
-  const horas = Math.round((tCritico - diasEnteros) * 24);
+  const horas       = Math.round((tCritico - diasEnteros) * 24);
 
   const ventaja = rNewt.convergió && rBis.convergió
     ? rNewt.iteracionesTotal < rBis.iteracionesTotal
@@ -538,12 +909,19 @@ function htmlInterpretacion(rBis, rNewt, U, descripcionModelo) {
       ? 'Solo Newton-Raphson convergió en este caso.'
       : 'Solo Bisección convergió en este caso.';
 
+  // Etiqueta del eje semántico: si U=0 es raíz matemática pura, si U>0 es umbral de inventario
+  const esRaizPura = U === 0;
+  const labelTiempo = esRaizPura ? 'x*' : 't*';
+  const labelAccion = esRaizPura
+    ? `La raíz de g(x) = 0 se encuentra en <strong>x* = ${tCritico.toFixed(6)}</strong>.`
+    : `El stock alcanzará el umbral de <strong>${U.toLocaleString()} unidades</strong>
+       en el <strong>día ${tCritico.toFixed(4)}</strong>
+       (aprox. día ${diasEnteros}, hora ${horas}:00).`;
+
   return `
     <div class="alert alert--error" role="status" style="font-size: 1.05rem;">
-      🚨 <strong>Alerta crítica:</strong> El inventario alcanzará el umbral de
-      <strong>${U.toLocaleString()} unidades</strong> en el
-      <strong>día ${tCritico.toFixed(4)}</strong>
-      (aprox. día ${diasEnteros}, hora ${horas}:00).
+      🚨 <strong>${esRaizPura ? 'Raíz encontrada:' : 'Alerta crítica:'}</strong>
+      ${labelAccion}
     </div>
 
     <div class="card card--escenario-e" style="margin-top: var(--spacing-4);">
@@ -555,13 +933,14 @@ function htmlInterpretacion(rBis, rNewt, U, descripcionModelo) {
         <div class="grid grid--auto">
           <div class="card card--info">
             <div class="card__body">
-              <strong>Tiempo crítico t*</strong><br>
+              <strong>${esRaizPura ? 'Raíz' : 'Tiempo crítico'} ${labelTiempo}</strong><br>
               <span style="font-size:1.5rem; color:var(--color-alert);">
-                ${tCritico.toFixed(4)} días
+                ${tCritico.toFixed(6)}
               </span><br>
-              <small>Instante en que f(t*) = ${U}</small>
+              <small>${esRaizPura ? `g(x*) ≈ 0` : `f(${labelTiempo}) = ${U}`}</small>
             </div>
           </div>
+          ${!esRaizPura ? `
           <div class="card card--info">
             <div class="card__body">
               <strong>Ventana de acción</strong><br>
@@ -570,24 +949,29 @@ function htmlInterpretacion(rBis, rNewt, U, descripcionModelo) {
               </span><br>
               <small>Para activar reposición o racionamiento</small>
             </div>
-          </div>
+          </div>` : ''}
           <div class="card card--info">
             <div class="card__body">
               <strong>Modelo usado</strong><br>
               <code style="font-size:0.85rem;">${descripcionModelo}</code><br>
-              <small>Umbral U = ${U.toLocaleString()} unidades</small>
+              <small>U = ${U.toLocaleString()}</small>
             </div>
           </div>
         </div>
 
         <p style="margin-top:var(--spacing-4);">
-          <strong>Interpretación para gestión de crisis:</strong>
-          Con el modelo <em>${descripcionModelo}</em>, el stock caerá por debajo
-          del nivel crítico de <strong>${U.toLocaleString()} unidades</strong>
-          en exactamente <strong>${tCritico.toFixed(4)} días</strong>.
-          Se recomienda activar el protocolo de reposición
-          <strong>antes del día ${Math.max(0, diasEnteros - 3)}</strong>
-          para absorber tiempos de entrega de 2-3 días.
+          ${esRaizPura
+            ? `<strong>Interpretación matemática:</strong>
+               La función <em>${descripcionModelo}</em> cruza el eje en
+               <strong>${labelTiempo} = ${tCritico.toFixed(6)}</strong>.`
+            : `<strong>Interpretación para gestión de crisis:</strong>
+               Con el modelo <em>${descripcionModelo}</em>, el stock caerá por debajo
+               del nivel crítico de <strong>${U.toLocaleString()} unidades</strong>
+               en exactamente <strong>${tCritico.toFixed(4)} días</strong>.
+               Se recomienda activar el protocolo de reposición
+               <strong>antes del día ${Math.max(0, diasEnteros - 3)}</strong>
+               para absorber tiempos de entrega de 2-3 días.`
+          }
         </p>
 
         <p>
@@ -632,11 +1016,6 @@ function renderizarGrafico(canvasId, ts, fs, U, tCritico) {
   // Línea del umbral U constante
   const umbralData = ts.map(() => U);
 
-  // Anotación del punto crítico como dataset de un solo punto
-  const puntoCritico = isFinite(tCritico)
-    ? [{ x: tCritico, y: U }]
-    : [];
-
   chartInstanciaE = new Chart(canvas, {
     type: 'line',
     data: {
@@ -662,10 +1041,9 @@ function renderizarGrafico(canvasId, ts, fs, U, tCritico) {
           fill:            false,
           tension:         0,
         },
-        ...(puntoCritico.length > 0 ? [{
+        ...(isFinite(tCritico) ? [{
           label:           `t* = ${tCritico.toFixed(4)} días`,
           data:            fs.map((_, i) => {
-            // Encontrar el índice más cercano a tCritico
             const tIdx = ts.findIndex(t => t >= tCritico);
             return i === tIdx ? U : null;
           }),
@@ -697,7 +1075,7 @@ function renderizarGrafico(canvasId, ts, fs, U, tCritico) {
         y: {
           ...(opcionesBase.scales?.y ?? {}),
           title:       { display: true, text: 'Unidades en inventario' },
-          beginAtZero: true,
+          beginAtZero: false,
         },
       },
     },
@@ -752,7 +1130,7 @@ function leerFormulario() {
     tMax = parseFloat(document.getElementById('e-exp-tmax')?.value);
     if (isNaN(p.A) || p.A <= 0) errores.push('A debe ser > 0.');
     if (isNaN(p.k) || p.k <= 0) errores.push('k debe ser > 0.');
-    if (!isNaN(U) && p.A <= U)
+    if (!isNaN(U) && U > 0 && p.A <= U)
       errores.push('El stock inicial A debe ser mayor que el umbral U.');
 
   } else if (modelo === 'lineal') {
@@ -761,7 +1139,7 @@ function leerFormulario() {
     tMax = parseFloat(document.getElementById('e-lin-tmax')?.value);
     if (isNaN(p.A) || p.A <= 0) errores.push('A debe ser > 0.');
     if (isNaN(p.r) || p.r <= 0) errores.push('r debe ser > 0.');
-    if (!isNaN(U) && p.A <= U)
+    if (!isNaN(U) && U > 0 && p.A <= U)
       errores.push('El stock inicial A debe ser mayor que el umbral U.');
 
   } else if (modelo === 'logistico') {
@@ -863,6 +1241,10 @@ function limpiarEscenarioE() {
   const errores = document.getElementById('e-errores');
   if (errores) errores.innerHTML = '';
 
+  // Ocultar también descripción del ejemplo
+  const divDesc = document.getElementById('e-descripcion-ejemplo');
+  if (divDesc) divDesc.style.display = 'none';
+
   if (chartInstanciaE) { chartInstanciaE.destroy(); chartInstanciaE = null; }
 }
 
@@ -873,10 +1255,23 @@ function limpiarEscenarioE() {
 function registrarEventosE() {
   document.getElementById('e-btn-calcular')
     ?.addEventListener('click', calcularEscenarioE);
+
   document.getElementById('e-btn-limpiar')
     ?.addEventListener('click', limpiarEscenarioE);
+
+  document.getElementById('e-btn-limpiar-ejemplo')
+    ?.addEventListener('click', limpiarEscenarioE);
+
   document.getElementById('e-modelo')
     ?.addEventListener('change', actualizarVistaModelo);
+
+  // Botón "Cargar Ejemplo" — patrón idéntico a escenarioA/D
+  document.getElementById('e-btn-ejemplo')
+    ?.addEventListener('click', cargarEjemploSeleccionado);
+
+  // Poblar el select y cargar automáticamente el primer ejemplo
+  poblarSelectEjemplos();
+  cargarEjemploSeleccionado();
 }
 
 // ─────────────────────────────────────────────
@@ -884,6 +1279,9 @@ function registrarEventosE() {
 // ─────────────────────────────────────────────
 
 function escenarioE() {
+  // Destruir gráfico previo si existía (navegación entre escenarios)
+  if (chartInstanciaE) { chartInstanciaE.destroy(); chartInstanciaE = null; }
+
   setTimeout(registrarEventosE, 0);
 
   return `
@@ -915,6 +1313,10 @@ function escenarioE() {
             <strong>Newton-Raphson</strong> (convergencia cuadrática,
             requiere buen punto inicial). El triángulo naranja en el gráfico
             marca el punto crítico encontrado.
+          </p>
+          <p class="form-help">
+            💡 Para funciones matemáticas puras g(x) = 0 (ejemplos E3, E4),
+            escribe la expresión en el modelo Personalizado y usa U = 0.
           </p>
         </div>
       </div>
