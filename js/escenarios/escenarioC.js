@@ -5,11 +5,46 @@
 //           básicos a partir de datos escasos de mercado
 // ============================================================
 
-import { lagrange, splinesNaturales } from '../core/interpolacion.js';
-import { renderizarGrafico } from '../ui/graficos.js';
-import { renderizarTabla } from '../ui/tablas.js';
-import { mostrarNotificacion } from '../ui/notificaciones.js';
-import { mostrarErrores, limpiarErrores } from '../ui/formularios.js';
+function lagrange(...args) {
+  return window.Interpolacion?.lagrange?.(...args);
+}
+
+function splinesNaturales(...args) {
+  return window.Interpolacion?.splinesNaturales?.(...args);
+}
+
+function renderizarGrafico(...args) {
+  return window.Graficos?.linea?.(...args);
+}
+
+function renderizarTabla(...args) {
+  return window.Tablas?.generar?.(...args);
+}
+
+function mostrarNotificacion(mensaje, tipo = 'info') {
+  const notifier = window.Notificaciones;
+  if (!notifier) return;
+  if (tipo === 'success') return notifier.exito(mensaje);
+  if (tipo === 'error') return notifier.error(mensaje);
+  if (tipo === 'warning' || tipo === 'warn') return notifier.advertencia(mensaje);
+  return notifier.info(mensaje);
+}
+
+function mostrarErrores(errores) {
+  if (!errores || typeof errores !== 'object') return;
+  Object.entries(errores).forEach(([campo, msg]) => {
+    const el = document.getElementById(campo);
+    if (el) { el.textContent = msg; el.style.display = 'block'; }
+  });
+}
+
+function limpiarErrores(campos) {
+  if (!Array.isArray(campos)) campos = [campos];
+  campos.forEach((campo) => {
+    const el = document.getElementById(campo);
+    if (el) { el.textContent = ''; el.style.display = 'none'; }
+  });
+}
 
 // ─── Constantes del escenario ───────────────────────────────
 const ID_ESCENARIO  = 'escenario-c';
@@ -33,7 +68,7 @@ const MAX_PUNTOS = 10;
 const MIN_PUNTOS = 3;
 
 // ─── Función principal: renderizar el escenario ─────────────
-export function renderizarEscenarioC(contenedor) {
+function renderizarEscenarioC(contenedor) {
   chartPrincipal = null;
   chartError     = null;
 
@@ -867,3 +902,6 @@ function _restablecerTodo() {
 
   mostrarNotificacion('Datos limpiados. Ingresa nuevos puntos o carga el ejemplo.', 'info');
 }
+
+// Exponer la función al ámbito global para el router runtime
+window.renderizarEscenarioC = renderizarEscenarioC;

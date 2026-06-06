@@ -420,6 +420,9 @@ function renderizarConclusiones() {
   `;
 }
 
+// Exponer al ámbito global para el router
+window.renderizarConclusiones = renderizarConclusiones;
+
 // ============================================================
 // FUNCIÓN PRIVADA: tarjeta de conclusión por escenario
 // ============================================================

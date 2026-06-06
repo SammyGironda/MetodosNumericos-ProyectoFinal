@@ -5,11 +5,50 @@
 //           crisis a partir de tasas de gasto instantáneo
 // ============================================================
 
-import { trapecio, simpson13, simpson38 } from '../core/integracion.js';
-import { renderizarGrafico } from '../ui/graficos.js';
-import { renderizarTabla } from '../ui/tablas.js';
-import { mostrarNotificacion } from '../ui/notificaciones.js';
-import { mostrarErrores, limpiarErrores } from '../ui/formularios.js';
+function trapecio(...args) {
+  return window.Integracion?.trapecio?.(...args);
+}
+
+function simpson13(...args) {
+  return window.Integracion?.simpson13?.(...args);
+}
+
+function simpson38(...args) {
+  return window.Integracion?.simpson38?.(...args);
+}
+
+function renderizarGrafico(...args) {
+  return window.Graficos?.linea?.(...args);
+}
+
+function renderizarTabla(...args) {
+  return window.Tablas?.generar?.(...args);
+}
+
+function mostrarNotificacion(mensaje, tipo = 'info') {
+  const notifier = window.Notificaciones;
+  if (!notifier) return;
+  if (tipo === 'success') return notifier.exito(mensaje);
+  if (tipo === 'error') return notifier.error(mensaje);
+  if (tipo === 'warning' || tipo === 'warn') return notifier.advertencia(mensaje);
+  return notifier.info(mensaje);
+}
+
+function mostrarErrores(errores) {
+  if (!errores || typeof errores !== 'object') return;
+  Object.entries(errores).forEach(([campo, msg]) => {
+    const el = document.getElementById(campo);
+    if (el) { el.textContent = msg; el.style.display = 'block'; }
+  });
+}
+
+function limpiarErrores(campos) {
+  if (!Array.isArray(campos)) campos = [campos];
+  campos.forEach((campo) => {
+    const el = document.getElementById(campo);
+    if (el) { el.textContent = ''; el.style.display = 'none'; }
+  });
+}
 
 // ─── Constantes del escenario ───────────────────────────────
 const ID_ESCENARIO   = 'escenario-d';
@@ -78,7 +117,7 @@ const MODELOS_TASA = {
 };
 
 // ─── Función principal: renderizar el escenario ─────────────
-export function renderizarEscenarioD(contenedor) {
+function renderizarEscenarioD(contenedor) {
   chartTasa  = null;
   chartAcum  = null;
   chartError = null;
@@ -1083,3 +1122,6 @@ function _restablecerTodo() {
 
   mostrarNotificacion('Escenario D restablecido', 'info');
 }
+
+// Exponer al scope global para el router runtime
+window.renderizarEscenarioD = renderizarEscenarioD;

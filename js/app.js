@@ -40,6 +40,51 @@ const MODULOS_ESCENARIO = {
   '#conclusiones': 'js/escenarios/conclusiones.js',
 };
 
+/**
+ * Dependencias adicionales que deben cargarse antes de cada escenario.
+ * Estos archivos exponen APIs globales usadas por los escenarios sin un bundler.
+ */
+const DEPENDENCIAS_ESCENARIO = {
+  '#escenario-a': [
+    'js/core/sistemasLineales.js',
+    'js/ui/graficos.js',
+    'js/ui/tablas.js',
+    'js/ui/formularios.js',
+    'js/ui/notificaciones.js',
+  ],
+  '#escenario-b': [
+    'js/core/ecuacionesDiferenciales.js',
+    'js/ui/graficos.js',
+    'js/ui/tablas.js',
+    'js/ui/formularios.js',
+    'js/ui/notificaciones.js',
+  ],
+  '#escenario-c': [
+    'js/core/interpolacion.js',
+    'js/ui/graficos.js',
+    'js/ui/tablas.js',
+    'js/ui/formularios.js',
+    'js/ui/notificaciones.js',
+  ],
+  '#escenario-d': [
+    'js/core/integracion.js',
+    'js/ui/graficos.js',
+    'js/ui/tablas.js',
+    'js/ui/formularios.js',
+    'js/ui/notificaciones.js',
+  ],
+  '#escenario-f': [
+    'js/core/sistemasLineales.js',
+    'js/core/utilidades.js',
+    'js/ui/graficos.js',
+    'js/ui/tablas.js',
+    'js/ui/formularios.js',
+    'js/ui/notificaciones.js',
+  ],
+  '#escenario-g': [
+  ],
+};
+
 /** Registro de módulos ya cargados para no repetir imports */
 const modulosCargados = new Set();
 
@@ -346,6 +391,17 @@ function cargarScript(src) {
   });
 }
 
+/**
+ * Carga dependencias globales necesarias para un escenario antes de cargar su módulo.
+ * @param {string} ruta - hash de la ruta del escenario
+ */
+async function cargarDependenciasEscenario(ruta) {
+  const dependencias = DEPENDENCIAS_ESCENARIO[ruta] || [];
+  for (const dependencia of dependencias) {
+    await cargarScript(dependencia);
+  }
+}
+
 // ─────────────────────────────────────────────
 // ROUTER: LÓGICA CENTRAL
 // ─────────────────────────────────────────────
@@ -401,33 +457,39 @@ async function navegar(ruta) {
       }
 
     } else if (ruta.startsWith('#escenario')) {
-      // Intentar cargar el módulo del escenario
       const rutaModulo = MODULOS_ESCENARIO[ruta];
 
       if (rutaModulo) {
         try {
+          await cargarDependenciasEscenario(ruta);
           await cargarScript(rutaModulo);
-          // El módulo exporta su función de renderizado como window.escenarioX
-          const clave = ruta.replace('#escenario-', 'escenario').replace(/-(.)/g, (_, c) => c.toUpperCase());
-          const renderEscenario = window[clave];
 
-          if (typeof renderEscenario === 'function') {
-            html = renderEscenario();
+          const clave = ruta.replace('#escenario-', 'escenario').replace(/-(.)/g, (_, c) => c.toUpperCase());
+          const claveRender = `renderizar${clave[0].toUpperCase()}${clave.slice(1)}`;
+          const renderDirecto = window[claveRender];
+          const renderGlobal  = window[clave];
+
+          if (typeof renderDirecto === 'function') {
+            renderizar(contenedor, '');           // ← limpiar ANTES
+            renderDirecto(contenedor);
+          } else if (typeof renderGlobal === 'function') {
+            const resultado = renderGlobal();
+            if (typeof resultado === 'string') {
+              renderizar(contenedor, resultado);
+            }
           } else {
-            html = vistaEscenarioPlaceholder(ruta);
+            renderizar(contenedor, vistaEscenarioPlaceholder(ruta));
           }
-        } catch {
-          html = vistaEscenarioPlaceholder(ruta);
+
+        } catch (err) {
+          console.error('❌ Error EXACTO cargando escenario:', err);
+          console.error('Stack:', err.stack);
+          renderizar(contenedor, vistaEscenarioPlaceholder(ruta));
         }
       } else {
-        html = vistaEscenarioPlaceholder(ruta);
+        renderizar(contenedor, vistaEscenarioPlaceholder(ruta));
       }
-
-    } else {
-      html = vista404();
     }
-
-    renderizar(contenedor, html);
 
   } catch (error) {
     console.error('Error al navegar:', error);

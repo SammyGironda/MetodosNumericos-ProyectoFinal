@@ -4,17 +4,97 @@
 // Contexto: Optimizar distribución de recursos entre zonas en crisis
 // ============================================================
 
-import { gaussSeidel, eliminacionGaussiana } from '../core/sistemasLineales.js';
-import { crearGraficoBarras, crearGraficoLineas, destruirGrafico } from '../ui/graficos.js';
-import { renderizarTablaIteraciones, renderizarTablaResultados } from '../ui/tablas.js';
-import { validarMatriz, validarVector, mostrarError, limpiarErrores } from '../ui/formularios.js';
-import { mostrarNotificacion } from '../ui/notificaciones.js';
-import { IDS, LIMITES } from '../constantes.js';
+const LIMITES = window.APP_CONFIG?.ALGORITMOS ?? {};
+
+function gaussSeidel(...args) {
+  return window.SistemasLineales?.gaussSeidel?.(...args);
+}
+
+function eliminacionGaussiana(...args) {
+  return window.SistemasLineales?.eliminacionGaussiana?.(...args);
+}
+
+function crearGraficoBarras(...args) {
+  return window.Graficos?.barra?.(...args);
+}
+
+function crearGraficoLineas(...args) {
+  return window.Graficos?.linea?.(...args);
+}
+
+function destruirGrafico(...args) {
+  return window.Graficos?.destruir?.(...args);
+}
+
+function renderizarTablaIteraciones(...args) {
+  return window.Tablas?.iteraciones?.(...args);
+}
+
+function renderizarTablaResultados(...args) {
+  return window.Tablas?.sistema?.(...args);
+}
+
+function mostrarNotificacion(mensaje, tipo = 'info') {
+  const notifier = window.Notificaciones;
+  if (!notifier) return;
+  if (tipo === 'success') return notifier.exito(mensaje);
+  if (tipo === 'error') return notifier.error(mensaje);
+  if (tipo === 'warning' || tipo === 'warn') return notifier.advertencia(mensaje);
+  return notifier.info(mensaje);
+}
+
+function validarMatriz(A, n) {
+  if (!Array.isArray(A) || A.length !== n) {
+    return 'La matriz debe ser cuadrada y tener el tamaño correcto.';
+  }
+  for (let i = 0; i < n; i++) {
+    if (!Array.isArray(A[i]) || A[i].length !== n) {
+      return 'La matriz debe ser cuadrada y contener todas las filas.';
+    }
+    for (let j = 0; j < n; j++) {
+      if (typeof A[i][j] !== 'number' || !isFinite(A[i][j])) {
+        return 'Todos los coeficientes de la matriz deben ser números válidos.';
+      }
+    }
+  }
+  return '';
+}
+
+function validarVector(b, n) {
+  if (!Array.isArray(b) || b.length !== n) {
+    return 'El vector debe tener el tamaño correcto.';
+  }
+  for (let i = 0; i < n; i++) {
+    if (typeof b[i] !== 'number' || !isFinite(b[i])) {
+      return 'Todos los valores del vector deben ser números válidos.';
+    }
+  }
+  return '';
+}
+
+function mostrarError(campo, mensaje) {
+  const errorEl = document.getElementById(campo);
+  if (!errorEl) return;
+  errorEl.textContent = mensaje;
+  errorEl.style.display = mensaje ? 'block' : 'none';
+}
+
+function limpiarErrores(campos) {
+  if (!Array.isArray(campos)) {
+    campos = [campos];
+  }
+  campos.forEach((campo) => {
+    const errorEl = document.getElementById(campo);
+    if (!errorEl) return;
+    errorEl.textContent = '';
+    errorEl.style.display = 'none';
+  });
+}
 
 // ------------------------------------------------------------
-// ESTADO LOCAL DEL ESCENARIO
+// ESTADO LOCAL DEL ESCENARIO (nombres únicos para evitar colisiones globales)
 // ------------------------------------------------------------
-const estado = {
+const estadoEscA = {
   metodoActual: 'gauss-seidel',
   resultados: null,
   graficos: {},
@@ -47,13 +127,29 @@ const EJEMPLO_PREDETERMINADO = {
 // RENDER PRINCIPAL DEL ESCENARIO
 // Llamado desde app.js cuando el usuario navega a #escenario-a
 // ------------------------------------------------------------
-export function renderizarEscenarioA(contenedor) {
-  limpiarGraficos();
-  estado.resultados = null;
+function renderizarEscenarioA(contenedor) {
+  try {
+    limpiarGraficos();
+    estadoEscA.resultados = null;
 
-  contenedor.innerHTML = generarHTML();
-  adjuntarEventos();
-  cargarEjemploPredeterminado();
+    contenedor.innerHTML = generarHTML();
+    adjuntarEventos();
+    cargarEjemploPredeterminado();
+  } catch (err) {
+    console.error('Error en renderizarEscenarioA:', err);
+    // Mostrar mensaje de error en el contenedor principal para facilitar depuración
+    if (contenedor) {
+      contenedor.innerHTML = `
+        <div class="alert alert--error" role="alert">
+          ❌ Ocurrió un error al cargar el Escenario A. Abre la consola del navegador para más detalles.
+        </div>
+      `;
+    }
+    // Intentar mostrar notificación si está disponible
+    if (window.Notificaciones && typeof window.Notificaciones.error === 'function') {
+      try { window.Notificaciones.error('Error al cargar Escenario A. Revisa la consola.'); } catch (e) { /* ignore */ }
+    }
+  }
 }
 
 // ------------------------------------------------------------
@@ -247,7 +343,7 @@ function adjuntarEventos() {
   // Cambio de método → mostrar/ocultar tolerancia
   document.getElementById('escA-metodo')
     .addEventListener('change', (e) => {
-      estado.metodoActual = e.target.value;
+      estadoEscA.metodoActual = e.target.value;
       const grupoTol = document.getElementById('escA-tolerancia-grupo');
       grupoTol.style.display = e.target.value === 'gauss-seidel' ? 'block' : 'none';
       ocultarResultados();
@@ -405,7 +501,7 @@ function validarDatos(n, A, b) {
   }
 
   // Advertir si NO es diagonal dominante (Gauss-Seidel puede no converger)
-  if (estado.metodoActual === 'gauss-seidel') {
+  if (estadoEscA.metodoActual === 'gauss-seidel') {
     const esDiagDominante = verificarDiagonalDominante(A, n);
     if (!esDiagDominante) {
       mostrarNotificacion(
@@ -468,7 +564,7 @@ function ejecutarCalculo() {
     return;
   }
 
-  estado.resultados = { ...resultado, n, A, b, metodo };
+  estadoEscA.resultados = { ...resultado, n, A, b, metodo };
   renderizarResultados();
   mostrarNotificacion('✅ Cálculo completado exitosamente', 'success');
 }
@@ -477,7 +573,7 @@ function ejecutarCalculo() {
 // RENDERIZAR TODOS LOS RESULTADOS
 // ------------------------------------------------------------
 function renderizarResultados() {
-  const { solucion, iteraciones, n, A, b, metodo } = estado.resultados;
+  const { solucion, iteraciones, n, A, b, metodo } = estadoEscA.resultados;
 
   // Mostrar sección de resultados
   document.getElementById('escA-resultados').style.display = 'block';
@@ -616,7 +712,7 @@ function renderizarGraficoDistribucion(solucion, n) {
     val < 0 ? '#6C8C74' : val > 50 ? '#D97059' : val > 20 ? '#F29966' : '#3E594F'
   );
 
-  estado.graficos['barras'] = crearGraficoBarras(
+  estadoEscA.graficos['barras'] = crearGraficoBarras(
     'escA-grafico-barras',
     {
       labels: etiquetas,
@@ -676,7 +772,7 @@ function renderizarGraficoConvergencia(iteraciones, nVars) {
     pointRadius: iteraciones.length <= 20 ? 4 : 2,
   }));
 
-  estado.graficos['convergencia'] = crearGraficoLineas(
+  estadoEscA.graficos['convergencia'] = crearGraficoLineas(
     'escA-grafico-convergencia',
     { labels: etiquetasIter, datasets },
     {
@@ -780,10 +876,13 @@ function limpiarGrafico(id) {
 }
 
 function limpiarGraficos() {
-  Object.keys(estado.graficos).forEach(key => {
-    if (estado.graficos[key]) {
-      try { estado.graficos[key].destroy(); } catch (_) {}
-      estado.graficos[key] = null;
+  Object.keys(estadoEscA.graficos).forEach(key => {
+    if (estadoEscA.graficos[key]) {
+      try { estadoEscA.graficos[key].destroy(); } catch (_) {}
+      estadoEscA.graficos[key] = null;
     }
   });
 }
+
+// Exponer al ámbito global para el router
+window.renderizarEscenarioA = renderizarEscenarioA;

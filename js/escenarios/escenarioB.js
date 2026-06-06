@@ -5,12 +5,60 @@
 //           durante una crisis de abastecimiento
 // ============================================================
 
-import { euler, heun, rk4 } from '../core/ecuacionesDiferenciales.js';
-import { renderizarGrafico } from '../ui/graficos.js';
-import { renderizarTabla } from '../ui/tablas.js';
-import { mostrarNotificacion } from '../ui/notificaciones.js';
-import { validarCampo, mostrarErrores, limpiarErrores } from '../ui/formularios.js';
-import { ESCENARIOS, IDS } from '../constantes.js';
+function euler(...args) {
+  return window.EcuacionesDiferenciales?.euler?.(...args);
+}
+
+function heun(...args) {
+  return window.EcuacionesDiferenciales?.heun?.(...args);
+}
+
+function rk4(...args) {
+  return window.EcuacionesDiferenciales?.rungeKutta4?.(...args);
+}
+
+function renderizarGrafico(...args) {
+  return window.Graficos?.linea?.(...args);
+}
+
+function renderizarTabla(...args) {
+  return window.Tablas?.generar?.(...args);
+}
+
+function mostrarNotificacion(mensaje, tipo = 'info') {
+  const notifier = window.Notificaciones;
+  if (!notifier) return;
+  if (tipo === 'success') return notifier.exito(mensaje);
+  if (tipo === 'error') return notifier.error(mensaje);
+  if (tipo === 'warning' || tipo === 'warn') return notifier.advertencia(mensaje);
+  return notifier.info(mensaje);
+}
+
+function validarCampo(inputEl, regla) {
+  return window.Formularios?.validarCampo?.(inputEl, regla);
+}
+
+function mostrarErrores(errores) {
+  if (!errores || typeof errores !== 'object') return;
+  Object.entries(errores).forEach(([campo, msg]) => {
+    const errorEl = document.getElementById(campo);
+    if (errorEl) {
+      errorEl.textContent = msg;
+      errorEl.style.display = 'block';
+    }
+  });
+}
+
+function limpiarErrores(campos) {
+  if (!Array.isArray(campos)) campos = [campos];
+  campos.forEach((campo) => {
+    const errorEl = document.getElementById(campo);
+    if (errorEl) {
+      errorEl.textContent = '';
+      errorEl.style.display = 'none';
+    }
+  });
+}
 
 // ─── Constantes del escenario ───────────────────────────────
 const ID_ESCENARIO = 'escenario-b';
@@ -32,7 +80,7 @@ let chartInstance  = null;
  */
 
 // ─── Función principal: renderizar el escenario ────────────
-export function renderizarEscenarioB(contenedor) {
+function renderizarEscenarioB(contenedor) {
   chartInstance = null;
 
   contenedor.innerHTML = `
@@ -768,3 +816,6 @@ function _restablecerFormulario() {
 
   mostrarNotificacion('Formulario restablecido a valores predeterminados', 'info');
 }
+
+// Exponer al ámbito global para el router
+window.renderizarEscenarioB = renderizarEscenarioB;

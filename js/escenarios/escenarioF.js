@@ -7,12 +7,50 @@
 //           que representan flujos de información entre zonas
 // ============================================================
 
-import { gaussSeidel, descomposicionLU } from '../core/sistemasLineales.js';
-import { renderizarGrafico } from '../ui/graficos.js';
-import { renderizarTabla } from '../ui/tablas.js';
-import { mostrarNotificacion } from '../ui/notificaciones.js';
-import { mostrarErrores, limpiarErrores } from '../ui/formularios.js';
-import { normaVectorial, normaMatriz, productoMatrizVector } from '../core/utilidades.js';
+function gaussSeidel(...args) {
+  return window.SistemasLineales?.gaussSeidel?.(...args);
+}
+
+function descomposicionLU(...args) {
+  return window.SistemasLineales?.descomposicionLU?.(...args);
+}
+
+function renderizarGrafico(...args) {
+  return window.Graficos?.linea?.(...args);
+}
+
+function renderizarTabla(...args) {
+  return window.Tablas?.generar?.(...args);
+}
+
+function mostrarNotificacion(mensaje, tipo = 'info') {
+  const notifier = window.Notificaciones;
+  if (!notifier) return;
+  if (tipo === 'success') return notifier.exito(mensaje);
+  if (tipo === 'error') return notifier.error(mensaje);
+  if (tipo === 'warning' || tipo === 'warn') return notifier.advertencia(mensaje);
+  return notifier.info(mensaje);
+}
+
+function mostrarErrores(errores) {
+  if (!errores || typeof errores !== 'object') return;
+  Object.entries(errores).forEach(([campo, msg]) => {
+    const el = document.getElementById(campo);
+    if (el) { el.textContent = msg; el.style.display = 'block'; }
+  });
+}
+
+function limpiarErrores(campos) {
+  if (!Array.isArray(campos)) campos = [campos];
+  campos.forEach((campo) => {
+    const el = document.getElementById(campo);
+    if (el) { el.textContent = ''; el.style.display = 'none'; }
+  });
+}
+
+function normaVectorial(...args) { return window.Utilidades?.normaVectorial?.(...args); }
+function normaMatriz(...args) { return window.Utilidades?.normaMatriz?.(...args); }
+function productoMatrizVector(...args) { return window.Utilidades?.productoMatrizVector?.(...args); }
 
 // ─── Constantes ──────────────────────────────────────────────
 const ID_ESCENARIO       = 'escenario-f';
@@ -90,7 +128,7 @@ const SISTEMAS_PRECARGADOS = {
 };
 
 // ─── Función principal ────────────────────────────────────────
-export function renderizarEscenarioF(contenedor) {
+function renderizarEscenarioF(contenedor) {
   chartRadar = chartCond = chartPerturb = null;
 
   contenedor.innerHTML = `
@@ -318,6 +356,9 @@ export function renderizarEscenarioF(contenedor) {
   _cargarSistema('bien_condicionado');
   _registrarEventos();
 }
+
+// Exponer al scope global para el router runtime
+window.renderizarEscenarioF = renderizarEscenarioF;
 
 // ─── Matriz editable ──────────────────────────────────────────
 function _renderizarMatrizEditable(A, b, n, soloLectura = false) {

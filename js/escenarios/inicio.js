@@ -410,6 +410,9 @@ function _tarjetaEscenario(cfg) {
 // ============================================================
 // Si tu app.js usa ES Modules:
 // export { renderizarInicio };
+
+// Exponer al ámbito global para el router
+window.renderizarInicio = renderizarInicio;
 //
 // Si es script global (recomendado para este proyecto sin bundler):
 // la función ya está en el scope global, app.js la llama directamente.

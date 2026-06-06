@@ -24,7 +24,7 @@
  *   mensaje: string
  * }}
  */
-export function newtonRaphson(f, fPrima, x0, tol = 1e-6, maxIter = 100) {
+function newtonRaphson(f, fPrima, x0, tol = 1e-6, maxIter = 100) {
   const iteraciones = [];
   let x = x0;
 
@@ -99,7 +99,7 @@ export function newtonRaphson(f, fPrima, x0, tol = 1e-6, maxIter = 100) {
  *   mensaje: string
  * }}
  */
-export function biseccion(f, a, b, tol = 1e-6, maxIter = 100) {
+function biseccion(f, a, b, tol = 1e-6, maxIter = 100) {
   const iteraciones = [];
 
   const fa = f(a);
@@ -182,7 +182,7 @@ export function biseccion(f, a, b, tol = 1e-6, maxIter = 100) {
  *   mensaje: string
  * }}
  */
-export function secante(f, x0, x1, tol = 1e-6, maxIter = 100) {
+function secante(f, x0, x1, tol = 1e-6, maxIter = 100) {
   const iteraciones = [];
   let xPrev = x0;
   let xCurr = x1;
@@ -253,7 +253,7 @@ export function secante(f, x0, x1, tol = 1e-6, maxIter = 100) {
  *   mensaje: string
  * }}
  */
-export function puntoFijo(g, x0, tol = 1e-6, maxIter = 100) {
+function puntoFijo(g, x0, tol = 1e-6, maxIter = 100) {
   const iteraciones = [];
   let x = x0;
 
