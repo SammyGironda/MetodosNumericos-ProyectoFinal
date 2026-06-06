@@ -1,1132 +1,1070 @@
-  (function() {
+/**
+ * escenarioD.js — Costo Acumulado de Crisis
+ * Simulación Numérica de Crisis - Métodos Numéricos Aplicados
+ *
+ * CONTEXTO DEL PROBLEMA:
+ *   Durante una crisis de abastecimiento, el gobierno necesita calcular
+ *   el costo total acumulado de las medidas de emergencia en un período
+ *   [t0, tFin]. Si c(t) representa el costo marginal (costo por unidad
+ *   de tiempo) de las intervenciones, el costo total es:
+ *
+ *     C_total = ∫[t0, tFin] c(t) dt
+ *
+ *   Modelos de costo marginal disponibles:
+ *     1. Lineal creciente:   c(t) = a + b·t
+ *     2. Exponencial:        c(t) = A·e^(k·t)
+ *     3. Cuadrático:         c(t) = a·t² + b·t + c
+ *     4. Sinusoidal (ciclos semanales): c(t) = A + B·sin(2π·t/7)
+ *     5. Personalizado: el usuario escribe su propia función
+ *
+ * MÉTODOS NUMÉRICOS (ejecutados en paralelo para comparar):
+ *   1. Regla del Trapecio compuesta
+ *   2. Regla de Simpson 1/3 compuesta
+ *   3. Cuadratura de Gauss-Legendre (5 puntos)
+ *
+ *   Si se conoce la primitiva analítica, se calcula el error real de
+ *   cada método numérico.
+ *
+ * EXPORTA: window.escenarioD
+ */
 
+'use strict';
 
-  // ============================================================
-  // escenarioD.js - Escenario D: Costo Acumulado durante Crisis
-  // Métodos: Regla del Trapecio + Regla de Simpson 1/3 y 3/8
-  // Contexto: Cálculo del costo económico total acumulado de una
-  //           crisis a partir de tasas de gasto instantáneo
-  // ============================================================
+// ─────────────────────────────────────────────
+// ALGORITMOS DE INTEGRACIÓN (autocontenidos)
+// ─────────────────────────────────────────────
 
-  function trapecio(...args) {
-    return window.Integracion?.trapecio?.(...args);
+/**
+ * Evalúa f(x) de forma segura.
+ * @param {Function} f
+ * @param {number}   x
+ * @returns {{ valor: number, error: string|null }}
+ */
+function evaluarSeguro(f, x) {
+  try {
+    const v = f(x);
+    if (!isFinite(v)) return { valor: NaN, error: `f(${x.toFixed(4)}) no es finito.` };
+    return { valor: v, error: null };
+  } catch (e) {
+    return { valor: NaN, error: `Error en f(${x.toFixed(4)}): ${e.message}` };
   }
+}
 
-  function simpson13(...args) {
-    return window.Integracion?.simpson13?.(...args);
+/**
+ * Genera n+1 puntos equiespaciados en [a,b] con sus valores f(xi).
+ * @param {Function} f
+ * @param {number}   a
+ * @param {number}   b
+ * @param {number}   n - número de subintervalos
+ * @returns {{ xs: number[], ys: number[], error: string|null }}
+ */
+function generarPuntos(f, a, b, n) {
+  const h = (b - a) / n;
+  const xs = [], ys = [];
+  for (let i = 0; i <= n; i++) {
+    const x = a + i * h;
+    const { valor, error } = evaluarSeguro(f, x);
+    if (error) return { xs: [], ys: [], error };
+    xs.push(x);
+    ys.push(valor);
   }
+  return { xs, ys, error: null };
+}
 
-  function simpson38(...args) {
-    return window.Integracion?.simpson38?.(...args);
-  }
+/**
+ * Regla del Trapecio compuesta.
+ * T = (h/2)·[f(x0) + 2f(x1) + ... + 2f(x_{n-1}) + f(xn)]
+ * Error: O(h²)
+ *
+ * @param {Function} f
+ * @param {number}   a
+ * @param {number}   b
+ * @param {number}   n - subintervalos
+ * @returns {Object}
+ */
+function trapecio(f, a, b, n) {
+  const { xs, ys, error } = generarPuntos(f, a, b, n);
+  if (error) return { integral: NaN, error, metodo: 'Trapecio', iteraciones: [] };
 
-  function renderizarGrafico(...args) {
-    return window.Graficos?.linea?.(...args);
-  }
+  const h = (b - a) / n;
+  let suma = ys[0] + ys[n];
+  for (let i = 1; i < n; i++) suma += 2 * ys[i];
+  const integral = (h / 2) * suma;
 
-  function renderizarTabla(...args) {
-    return window.Tablas?.generar?.(...args);
-  }
-
-  function mostrarNotificacion(mensaje, tipo = 'info') {
-    const notifier = window.Notificaciones;
-    if (!notifier) return;
-    if (tipo === 'success') return notifier.exito(mensaje);
-    if (tipo === 'error') return notifier.error(mensaje);
-    if (tipo === 'warning' || tipo === 'warn') return notifier.advertencia(mensaje);
-    return notifier.info(mensaje);
-  }
-
-  function mostrarErrores(errores) {
-    if (!errores || typeof errores !== 'object') return;
-    Object.entries(errores).forEach(([campo, msg]) => {
-      const el = document.getElementById(campo);
-      if (el) { el.textContent = msg; el.style.display = 'block'; }
+  const iteraciones = [];
+  for (let i = 0; i < n; i++) {
+    const area = (h / 2) * (ys[i] + ys[i + 1]);
+    iteraciones.push({
+      tramo: i + 1,
+      xi:    xs[i],   fxi:  ys[i],
+      xi1:   xs[i+1], fxi1: ys[i+1],
+      area,
+      detalle: `[${xs[i].toFixed(3)}, ${xs[i+1].toFixed(3)}]: área = ${area.toFixed(6)}`,
     });
   }
 
-  function limpiarErrores(campos) {
-    if (!Array.isArray(campos)) campos = [campos];
-    campos.forEach((campo) => {
-      const el = document.getElementById(campo);
-      if (el) { el.textContent = ''; el.style.display = 'none'; }
+  return { integral, error: null, metodo: `Trapecio (n=${n})`,
+           iteraciones, nEvaluaciones: n + 1, h, xs, ys };
+}
+
+/**
+ * Regla de Simpson 1/3 compuesta.
+ * S = (h/3)·[f(x0) + 4f(x1) + 2f(x2) + 4f(x3) + ... + f(xn)]
+ * Requiere n par. Error: O(h⁴)
+ *
+ * @param {Function} f
+ * @param {number}   a
+ * @param {number}   b
+ * @param {number}   n - subintervalos (se ajusta al siguiente par si es impar)
+ * @returns {Object}
+ */
+function simpson13(f, a, b, n) {
+  if (n % 2 !== 0) n++;
+
+  const { xs, ys, error } = generarPuntos(f, a, b, n);
+  if (error) return { integral: NaN, error, metodo: 'Simpson 1/3', iteraciones: [] };
+
+  const h = (b - a) / n;
+  let suma = ys[0] + ys[n];
+  for (let i = 1; i < n; i++) suma += (i % 2 === 0 ? 2 : 4) * ys[i];
+  const integral = (h / 3) * suma;
+
+  const iteraciones = [];
+  for (let i = 0; i < n; i += 2) {
+    const area = (h / 3) * (ys[i] + 4 * ys[i+1] + ys[i+2]);
+    iteraciones.push({
+      tramo: i / 2 + 1,
+      xi:  xs[i],   fxi:  ys[i],
+      xm:  xs[i+1], fxm:  ys[i+1],
+      xi2: xs[i+2], fxi2: ys[i+2],
+      area,
+      detalle: `[${xs[i].toFixed(3)}, ${xs[i+2].toFixed(3)}]: área = ${area.toFixed(6)}`,
     });
   }
 
-  // ─── Constantes del escenario ───────────────────────────────
-  const CHART_TASA_ID  = 'grafico-tasa-d';
-  const CHART_ACUM_ID  = 'grafico-acumulado-d';
-  const CHART_ERROR_ID = 'grafico-error-d';
-  let chartTasa        = null;
-  let chartAcum        = null;
-  let chartError       = null;
+  return { integral, error: null, metodo: `Simpson 1/3 (n=${n})`,
+           iteraciones, nEvaluaciones: n + 1, h, xs, ys };
+}
 
-  // ─── Modelos de tasa de gasto predefinidos ───────────────────
-  /**
-   * Cada modelo define f(t) = tasa de gasto instantáneo en el día t
-   * Unidad: millones de Bs / día
-   */
-  const MODELOS_TASA = {
-    lineal: {
-      nombre:      'Lineal creciente',
-      descripcion: 'Gasto que aumenta proporcionalmente con el tiempo',
-      formula:     'f(t) = a·t + b',
-      params:      [
-        { id: 'param-a', label: 'Pendiente a', valor: 2.5,  min: 0, step: 0.1 },
-        { id: 'param-b', label: 'Intercepto b', valor: 10,  min: 0, step: 1   }
-      ],
-      fn: (t, p) => p.a * t + p.b
-    },
-    exponencial: {
-      nombre:      'Exponencial',
-      descripcion: 'Gasto que crece de forma explosiva (pánico o colapso)',
-      formula:     'f(t) = A·eᵏᵗ',
-      params:      [
-        { id: 'param-a', label: 'Amplitud A',   valor: 5,    min: 0.1, step: 0.1 },
-        { id: 'param-b', label: 'Tasa k',       valor: 0.08, min: 0.001, step: 0.001 }
-      ],
-      fn: (t, p) => p.a * Math.exp(p.b * t)
-    },
-    gaussiana: {
-      nombre:      'Pico gaussiano',
-      descripcion: 'Gasto con pico en el momento álgido de la crisis',
-      formula:     'f(t) = A·exp(−(t−μ)²/(2σ²))',
-      params:      [
-        { id: 'param-a', label: 'Amplitud A',     valor: 100,  min: 1,   step: 1   },
-        { id: 'param-b', label: 'Centro μ (día)', valor: 15,   min: 0,   step: 1   },
-        { id: 'param-c', label: 'Ancho σ',        valor: 5,    min: 0.5, step: 0.5 }
-      ],
-      fn: (t, p) => p.a * Math.exp(-Math.pow(t - p.b, 2) / (2 * p.c * p.c))
-    },
-    sinusoidal: {
-      nombre:      'Oscilante (crisis cíclica)',
-      descripcion: 'Gasto con ciclos de tensión y alivio',
-      formula:     'f(t) = A·sin(ωt + φ) + D',
-      params:      [
-        { id: 'param-a', label: 'Amplitud A',     valor: 30,  min: 0, step: 1    },
-        { id: 'param-b', label: 'Frecuencia ω',   valor: 0.3, min: 0.01, step: 0.01 },
-        { id: 'param-c', label: 'Desplaz. D',     valor: 50,  min: 0, step: 1    }
-      ],
-      fn: (t, p) => p.a * Math.sin(p.b * t) + p.c
-    },
-    personalizada: {
-      nombre:      'Datos manuales',
-      descripcion: 'Ingresa tus propios valores de tasa de gasto por día',
-      formula:     'Tabla de valores (tᵢ, f(tᵢ))',
-      params:      [],
-      fn:          null  // usa tabla de entrada
-    }
-  };
-
-  // ─── Función principal: renderizar el escenario ─────────────
-  function renderizarEscenarioD(contenedor) {
-    const ID_ESCENARIO = 'escenario-d';
-    const TITULO = 'Costo Económico Acumulado de una Crisis de Abastecimiento';
-    chartAcum  = null;
-    chartError = null;
-
-    contenedor.innerHTML = `
-      <section class="escenario" id="${ID_ESCENARIO}" aria-labelledby="titulo-esc-d">
-
-        <!-- ENCABEZADO -->
-        <div class="escenario__header card card--escenario-d">
-          <div class="card__body">
-            <div class="escenario__titulo-grupo">
-              <span class="badge badge--escenario-d">Escenario D</span>
-              <h1 id="titulo-esc-d" class="escenario__titulo">
-                Costo Económico Acumulado de una Crisis de Abastecimiento
-              </h1>
-            </div>
-            <p class="escenario__descripcion">
-              El gasto de emergencia durante una crisis varía segundo a segundo.
-              Este escenario calcula el <strong>costo total acumulado</strong> integrando
-              numéricamente la tasa de gasto f(t), usando
-              <strong>Trapecio</strong>, <strong>Simpson 1/3</strong> y
-              <strong>Simpson 3/8</strong>, y compara su precisión contra la
-              solución analítica cuando está disponible.
-            </p>
-            <div class="escenario__formula">
-              <code>Costo total = ∫ₐᵇ f(t) dt</code>
-              <p class="form-help">
-                Trapecio: O(h²) | Simpson 1/3: O(h⁴) | Simpson 3/8: O(h⁴) — f(t) = tasa de gasto [millones Bs/día]
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <!-- CONFIGURACIÓN -->
-        <div class="card">
-          <div class="card__header">
-            <h2 class="card__title">Configuración del Modelo de Gasto</h2>
-          </div>
-          <div class="card__body">
-
-            <!-- Selector de modelo -->
-            <div class="form-row form-row--2-col">
-              <div class="form-group">
-                <label class="form-label" for="modelo-tasa">
-                  Modelo de tasa de gasto f(t)
-                </label>
-                <select class="form-input" id="modelo-tasa">
-                  ${Object.entries(MODELOS_TASA).map(([key, m]) =>
-                    `<option value="${key}">${m.nombre} — ${m.formula}</option>`
-                  ).join('')}
-                </select>
-                <span class="form-help" id="desc-modelo">
-                  ${MODELOS_TASA.lineal.descripcion}
-                </span>
-              </div>
-
-              <div class="form-group">
-                <label class="form-label" for="n-subintervalos">
-                  Número de subintervalos n <span aria-hidden="true">*</span>
-                </label>
-                <input
-                  class="form-input"
-                  type="number"
-                  id="n-subintervalos"
-                  value="100"
-                  min="2"
-                  max="10000"
-                  step="2"
-                />
-                <span class="form-help">
-                  Debe ser <strong>par</strong> (Simpson 1/3) y múltiplo de 3 (Simpson 3/8).
-                  Se recomienda múltiplo de 6 (ej: 6, 12, 30, 60, 300).
-                </span>
-                <span class="form-error" id="error-n" aria-live="polite"></span>
-              </div>
-            </div>
-
-            <!-- Intervalo de integración -->
-            <div class="form-row form-row--2-col">
-              <div class="form-group">
-                <label class="form-label" for="t-inicio">
-                  Día inicial a <span aria-hidden="true">*</span>
-                </label>
-                <input
-                  class="form-input"
-                  type="number"
-                  id="t-inicio"
-                  value="0"
-                  min="0"
-                  step="1"
-                />
-                <span class="form-error" id="error-t-inicio" aria-live="polite"></span>
-              </div>
-              <div class="form-group">
-                <label class="form-label" for="t-fin">
-                  Día final b <span aria-hidden="true">*</span>
-                </label>
-                <input
-                  class="form-input"
-                  type="number"
-                  id="t-fin"
-                  value="30"
-                  min="1"
-                  max="365"
-                  step="1"
-                />
-                <span class="form-error" id="error-t-fin" aria-live="polite"></span>
-              </div>
-            </div>
-
-            <!-- Parámetros dinámicos del modelo -->
-            <div id="contenedor-params-modelo">
-              <!-- Generado dinámicamente según modelo seleccionado -->
-            </div>
-
-            <!-- Tabla manual (solo para modelo personalizado) -->
-            <div id="contenedor-tabla-manual" hidden>
-              <div class="form-group">
-                <label class="form-label">Tabla de valores f(t)</label>
-                <p class="form-help">
-                  Ingresa al menos 3 pares (día, gasto). Los días deben ser
-                  estrictamente crecientes. El número de intervalos se determinará
-                  automáticamente a partir de los datos.
-                </p>
-                <div id="tabla-manual-d" class="tabla-contenedor"></div>
-                <div class="form-button-group" style="margin-top:0.5rem;">
-                  <button type="button" class="btn btn--secondary btn--small" id="btn-agregar-fila-d">
-                    + Agregar fila
-                  </button>
-                  <button type="button" class="btn btn--secondary btn--small" id="btn-quitar-fila-d">
-                    − Quitar última
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div class="form-button-group" style="margin-top: 1.5rem;">
-              <button type="button" class="btn btn--primary" id="btn-integrar-d">
-                Calcular costo acumulado
-              </button>
-              <button type="button" class="btn btn--secondary" id="btn-reset-d">
-                Restablecer
-              </button>
-            </div>
-
-            <span class="form-error" id="error-general-d" aria-live="polite"></span>
-          </div>
-        </div>
-
-        <!-- RESULTADOS -->
-        <div id="resultados-d" hidden aria-live="polite">
-
-          <!-- RESULTADO DESTACADO -->
-          <div class="card card--success" id="card-resultado-principal">
-            <div class="card__header">
-              <h2 class="card__title">Costo Total Estimado</h2>
-            </div>
-            <div class="card__body" id="resultado-principal-d">
-              <!-- Generado dinámicamente -->
-            </div>
-          </div>
-
-          <!-- MÉTRICAS -->
-          <div class="card">
-            <div class="card__header">
-              <h2 class="card__title">Comparación de Métodos</h2>
-            </div>
-            <div class="card__body">
-              <div class="grid grid--4-col" id="metricas-d"></div>
-            </div>
-          </div>
-
-          <!-- GRÁFICO TASA -->
-          <div class="card">
-            <div class="card__header">
-              <h2 class="card__title">Tasa de Gasto f(t) a lo largo de la Crisis</h2>
-            </div>
-            <div class="card__body">
-              <div class="grafico-contenedor" style="height: 340px;">
-                <canvas id="${CHART_TASA_ID}" role="img"
-                  aria-label="Gráfico de tasa de gasto diaria"></canvas>
-              </div>
-            </div>
-          </div>
-
-          <!-- GRÁFICO ACUMULADO -->
-          <div class="card">
-            <div class="card__header">
-              <h2 class="card__title">Costo Acumulado F(t) = ∫₀ᵗ f(s) ds</h2>
-            </div>
-            <div class="card__body">
-              <div class="grafico-contenedor" style="height: 340px;">
-                <canvas id="${CHART_ACUM_ID}" role="img"
-                  aria-label="Gráfico de costo acumulado"></canvas>
-              </div>
-            </div>
-          </div>
-
-          <!-- TABLA DETALLADA -->
-          <div class="card">
-            <div class="card__header">
-              <h2 class="card__title">Tabla de Integración Detallada</h2>
-            </div>
-            <div class="card__body">
-              <div id="tabla-integracion-d" class="tabla-contenedor"></div>
-            </div>
-          </div>
-
-          <!-- GRÁFICO DE ERROR -->
-          <div class="card">
-            <div class="card__header">
-              <h2 class="card__title">Error Relativo vs. Solución de Referencia</h2>
-            </div>
-            <div class="card__body">
-              <div class="grafico-contenedor" style="height: 280px;">
-                <canvas id="${CHART_ERROR_ID}" role="img"
-                  aria-label="Error relativo de los métodos de integración"></canvas>
-              </div>
-              <p class="form-help" style="margin-top:0.5rem;" id="nota-referencia">
-                <!-- Nota sobre qué se usa como referencia -->
-              </p>
-            </div>
-          </div>
-
-          <!-- CONVERGENCIA -->
-          <div class="card">
-            <div class="card__header">
-              <h2 class="card__title">Análisis de Convergencia (variando n)</h2>
-            </div>
-            <div class="card__body">
-              <div id="tabla-convergencia-d" class="tabla-contenedor"></div>
-            </div>
-          </div>
-
-          <!-- INTERPRETACIÓN -->
-          <div class="card card--info">
-            <div class="card__header">
-              <h2 class="card__title">Interpretación Económica</h2>
-            </div>
-            <div class="card__body" id="interpretacion-d">
-              <!-- Generado dinámicamente -->
-            </div>
-          </div>
-
-        </div><!-- /resultados -->
-
-      </section>
-    `;
-
-    _renderizarParamsModelo('lineal');
-    _registrarEventos();
-  }
-
-  // ─── Tabla de datos manuales ─────────────────────────────────
-  let filasManual = [
-    { t: 0,  ft: 10 },
-    { t: 5,  ft: 25 },
-    { t: 10, ft: 45 },
-    { t: 15, ft: 80 },
-    { t: 20, ft: 60 },
-    { t: 25, ft: 40 },
-    { t: 30, ft: 30 }
+/**
+ * Cuadratura de Gauss-Legendre con 5 puntos.
+ * Exacta para polinomios de grado ≤ 9.
+ * Cambio de variable: x = ((b-a)t + (b+a)) / 2, t ∈ [-1, 1]
+ *
+ * @param {Function} f
+ * @param {number}   a
+ * @param {number}   b
+ * @returns {Object}
+ */
+function gaussLegendre5(f, a, b) {
+  // Nodos y pesos estándar para 5 puntos (Burden & Faires, Tabla 4.2)
+  const nodos = [
+    -0.9061798459386640, -0.5384693101056831, 0.0,
+     0.5384693101056831,  0.9061798459386640,
+  ];
+  const pesos = [
+    0.2369268850561891, 0.4786286704993665, 0.5688888888888889,
+    0.4786286704993665, 0.2369268850561891,
   ];
 
-  function _renderizarTablaManual() {
-    const contenedor = document.getElementById('tabla-manual-d');
-    if (!contenedor) return;
+  const mitad  = (b - a) / 2;
+  const centro = (b + a) / 2;
+  const iteraciones = [];
+  let suma = 0;
 
-    contenedor.innerHTML = `
-      <table style="width:100%; border-collapse:collapse;">
+  for (let i = 0; i < 5; i++) {
+    const x  = mitad * nodos[i] + centro;
+    const { valor: fx, error } = evaluarSeguro(f, x);
+    if (error) return { integral: NaN, error, metodo: 'Gauss-Legendre', iteraciones: [] };
+
+    const contrib = pesos[i] * fx;
+    suma += contrib;
+
+    iteraciones.push({
+      i: i + 1, nodo_t: nodos[i], x, fx, peso: pesos[i],
+      contribucion: mitad * contrib,
+      detalle: `t=${nodos[i].toFixed(6)}, x=${x.toFixed(6)}, f(x)=${fx.toFixed(6)}, w·f(x)=${contrib.toFixed(6)}`,
+    });
+  }
+
+  return { integral: mitad * suma, error: null,
+           metodo: 'Gauss-Legendre (5 puntos)',
+           iteraciones, nEvaluaciones: 5 };
+}
+
+// ─────────────────────────────────────────────
+// MODELOS DE COSTO MARGINAL
+// ─────────────────────────────────────────────
+
+/**
+ * Construye la función c(t) según el modelo elegido.
+ * También retorna la primitiva analítica C(t) cuando está disponible,
+ * para calcular el error real de cada método numérico.
+ *
+ * @param {string} modelo
+ * @param {Object} p       - parámetros del modelo
+ * @returns {{ f: Function, C: Function|null, descripcion: string }|{ error: string }}
+ */
+function construirModelo(modelo, p) {
+  switch (modelo) {
+
+    case 'lineal': {
+      // c(t) = a + b·t    →   C(t) = a·t + (b/2)·t²
+      const f = t => p.a + p.b * t;
+      const C = t => p.a * t + (p.b / 2) * t * t;
+      return { f, C, descripcion: `c(t) = ${p.a} + ${p.b}·t` };
+    }
+
+    case 'exponencial': {
+      // c(t) = A·e^(k·t)  →  C(t) = (A/k)·e^(k·t)
+      if (Math.abs(p.k) < 1e-14)
+        return { error: 'k no puede ser cero en el modelo exponencial.' };
+      const f = t => p.A * Math.exp(p.k * t);
+      const C = t => (p.A / p.k) * Math.exp(p.k * t);
+      return { f, C, descripcion: `c(t) = ${p.A}·e^(${p.k}·t)` };
+    }
+
+    case 'cuadratico': {
+      // c(t) = a·t² + b·t + c  →  C(t) = (a/3)·t³ + (b/2)·t² + c·t
+      const f = t => p.a * t * t + p.b * t + p.c;
+      const C = t => (p.a / 3) * t**3 + (p.b / 2) * t * t + p.c * t;
+      return { f, C, descripcion: `c(t) = ${p.a}·t² + ${p.b}·t + ${p.c}` };
+    }
+
+    case 'sinusoidal': {
+      // c(t) = A + B·sin(2π·t/7)  →  C(t) = A·t − B·(7/2π)·cos(2π·t/7)
+      const omega = 2 * Math.PI / 7;
+      const f = t => p.A + p.B * Math.sin(omega * t);
+      const C = t => p.A * t - p.B * (7 / (2 * Math.PI)) * Math.cos(omega * t);
+      return { f, C, descripcion: `c(t) = ${p.A} + ${p.B}·sin(2π·t/7)` };
+    }
+
+    case 'personalizado': {
+      const expr = (p.expresion ?? '').trim().replace(/\^/g, '**');
+      if (!expr) return { error: 'Escribe una expresión para el modelo personalizado.' };
+      try {
+        // eslint-disable-next-line no-new-func
+        const f = new Function('t', `'use strict'; return (${expr});`);
+        const prueba = f(1);
+        if (!isFinite(prueba))
+          return { error: 'La expresión no es finita en t = 1. Revísala.' };
+        return { f, C: null, descripcion: `c(t) = ${p.expresion}` };
+      } catch (e) {
+        return { error: `Expresión inválida: ${e.message}` };
+      }
+    }
+
+    default:
+      return { error: `Modelo desconocido: ${modelo}` };
+  }
+}
+
+// ─────────────────────────────────────────────
+// GENERADORES DE HTML
+// ─────────────────────────────────────────────
+
+/**
+ * HTML del formulario de parámetros.
+ * @returns {string}
+ */
+function htmlFormulario() {
+  return `
+    <!-- Selector de modelo -->
+    <div class="form-group">
+      <label class="form-label" for="d-modelo">Modelo de costo marginal c(t)</label>
+      <select class="form-input" id="d-modelo">
+        <option value="lineal">Lineal: c(t) = a + b·t</option>
+        <option value="exponencial" selected>Exponencial: c(t) = A·e^(k·t)</option>
+        <option value="cuadratico">Cuadrático: c(t) = a·t² + b·t + c</option>
+        <option value="sinusoidal">Sinusoidal (ciclos semanales): c(t) = A + B·sin(2π·t/7)</option>
+        <option value="personalizado">Personalizado (escribe tu función)</option>
+      </select>
+    </div>
+
+    <!-- Parámetros: Lineal -->
+    <div id="d-params-lineal" class="d-params" hidden>
+      <div class="form-row form-row--2-col">
+        <div class="form-group">
+          <label class="form-label" for="d-lin-a">Intercepto (a) — costo base</label>
+          <input class="form-input" type="number" id="d-lin-a" value="1000" step="1">
+          <span class="form-help">Costo fijo por unidad de tiempo ($/día)</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="d-lin-b">Pendiente (b)</label>
+          <input class="form-input" type="number" id="d-lin-b" value="50" step="1">
+          <span class="form-help">Incremento de costo por día ($/día²)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Parámetros: Exponencial -->
+    <div id="d-params-exponencial" class="d-params">
+      <div class="form-row form-row--2-col">
+        <div class="form-group">
+          <label class="form-label" for="d-exp-A">Amplitud (A)</label>
+          <input class="form-input" type="number" id="d-exp-A" value="500" step="1">
+          <span class="form-help">Costo inicial ($/día)</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="d-exp-k">Tasa de crecimiento (k)</label>
+          <input class="form-input" type="number" id="d-exp-k" value="0.08" step="0.001">
+          <span class="form-help">k > 0 = escalada, k < 0 = alivio</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Parámetros: Cuadrático -->
+    <div id="d-params-cuadratico" class="d-params" hidden>
+      <div class="form-row form-row--3-col">
+        <div class="form-group">
+          <label class="form-label" for="d-cua-a">Coeficiente a (t²)</label>
+          <input class="form-input" type="number" id="d-cua-a" value="2" step="0.1">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="d-cua-b">Coeficiente b (t)</label>
+          <input class="form-input" type="number" id="d-cua-b" value="10" step="1">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="d-cua-c">Término independiente c</label>
+          <input class="form-input" type="number" id="d-cua-c" value="500" step="1">
+        </div>
+      </div>
+    </div>
+
+    <!-- Parámetros: Sinusoidal -->
+    <div id="d-params-sinusoidal" class="d-params" hidden>
+      <div class="form-row form-row--2-col">
+        <div class="form-group">
+          <label class="form-label" for="d-sin-A">Costo base (A)</label>
+          <input class="form-input" type="number" id="d-sin-A" value="1000" step="1">
+          <span class="form-help">Costo promedio por día</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="d-sin-B">Amplitud de variación (B)</label>
+          <input class="form-input" type="number" id="d-sin-B" value="300" step="1">
+          <span class="form-help">Variación semanal del costo</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Parámetros: Personalizado -->
+    <div id="d-params-personalizado" class="d-params" hidden>
+      <div class="form-group">
+        <label class="form-label" for="d-per-expr">Expresión c(t)</label>
+        <input class="form-input" type="text" id="d-per-expr"
+          placeholder="Ej: 500 * Math.exp(0.08*t) + 100*t"
+          aria-describedby="d-per-expr-help">
+        <span class="form-help" id="d-per-expr-help">
+          Usa t como variable. Soporta: +, −, *, /, **, Math.exp(), Math.sin(), Math.log(), etc.
+        </span>
+      </div>
+    </div>
+
+    <!-- Parámetros comunes: intervalo y subintervalos -->
+    <div class="form-row form-row--3-col" style="margin-top: var(--spacing-4);">
+      <div class="form-group">
+        <label class="form-label" for="d-a">Inicio de crisis t₀ (días)</label>
+        <input class="form-input" type="number" id="d-a" value="0" min="0" step="1">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="d-b">Fin de crisis t_fin (días)</label>
+        <input class="form-input" type="number" id="d-b" value="30" min="1" step="1">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="d-n">Subintervalos (n)</label>
+        <input class="form-input" type="number" id="d-n" value="100" min="2" max="10000" step="2">
+        <span class="form-help">Debe ser par (se ajusta automáticamente)</span>
+      </div>
+    </div>
+
+    <div class="form-button-group">
+      <button type="button" class="btn btn--primary" id="d-btn-calcular">
+        ▶ Calcular costo acumulado
+      </button>
+      <button type="button" class="btn btn--secondary" id="d-btn-limpiar">
+        ↺ Restablecer
+      </button>
+    </div>
+  `;
+}
+
+/**
+ * Tabla comparativa de los tres métodos de integración.
+ * @param {Object}      rTrap  - resultado Trapecio
+ * @param {Object}      rSimp  - resultado Simpson 1/3
+ * @param {Object}      rGauss - resultado Gauss-Legendre
+ * @param {Function|null} C    - primitiva analítica (para error real)
+ * @param {number}      a
+ * @param {number}      b
+ * @returns {string}
+ */
+function htmlTablaComparativa(rTrap, rSimp, rGauss, C, a, b) {
+  // Valor exacto si existe la primitiva
+  const exacto = C ? C(b) - C(a) : null;
+
+  const fila = (r) => {
+    if (r.error || isNaN(r.integral)) {
+      return `<td colspan="4" class="table__cell--error">${r.error ?? 'Error'}</td>`;
+    }
+    const errorReal = exacto !== null ? Math.abs(r.integral - exacto) : null;
+    return `
+      <td class="table__cell--number">
+        $${r.integral.toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      </td>
+      <td class="table__cell--number">${r.nEvaluaciones}</td>
+      ${exacto !== null
+        ? `<td class="table__cell--number ${errorReal > 0.01 ? 'table__cell--error' : ''}">
+             ${errorReal.toExponential(4)}
+           </td>`
+        : '<td class="table__cell--number">—</td>'
+      }
+    `;
+  };
+
+  return `
+    ${exacto !== null ? `
+      <div class="alert alert--success" role="status" style="margin-bottom: var(--spacing-3);">
+        ✅ Valor exacto (primitiva analítica):
+        <strong>$${exacto.toLocaleString('es-BO', { minimumFractionDigits: 4 })}</strong>
+      </div>
+    ` : `
+      <div class="alert alert--info" role="status" style="margin-bottom: var(--spacing-3);">
+        ℹ️ Modelo personalizado: no se dispone de primitiva analítica.
+        Se muestra el resultado numérico de cada método.
+      </div>
+    `}
+    <div style="overflow-x: auto;">
+      <table>
         <thead>
           <tr>
-            <th style="padding:8px; background:var(--color-neutral-100,#f5f5f5); text-align:center; width:40px;">#</th>
-            <th style="padding:8px; background:var(--color-neutral-100,#f5f5f5); text-align:center;">Día t</th>
-            <th style="padding:8px; background:var(--color-neutral-100,#f5f5f5); text-align:center;">f(t) [M Bs/día]</th>
+            <th>Método</th>
+            <th>Costo total (∫c dt)</th>
+            <th>Evaluaciones de f</th>
+            <th>Error real</th>
           </tr>
         </thead>
         <tbody>
-          ${filasManual.map((fila, i) => `
-            <tr>
-              <td style="text-align:center; padding:4px; color:var(--color-neutral-500,#888);">${i + 1}</td>
-              <td style="padding:4px 8px;">
-                <input class="form-input" type="number" data-index="${i}" data-campo="t"
-                  value="${fila.t}" step="any" style="width:100%; text-align:right;"
-                  aria-label="Día ${i + 1}" />
-              </td>
-              <td style="padding:4px 8px;">
-                <input class="form-input" type="number" data-index="${i}" data-campo="ft"
-                  value="${fila.ft}" step="any" style="width:100%; text-align:right;"
-                  aria-label="f(t) punto ${i + 1}" />
-              </td>
-            </tr>
-          `).join('')}
+          <tr><td><strong>Trapecio</strong></td>${fila(rTrap)}</tr>
+          <tr><td><strong>Simpson 1/3</strong></td>${fila(rSimp)}</tr>
+          <tr><td><strong>Gauss-Legendre</strong></td>${fila(rGauss)}</tr>
         </tbody>
       </table>
-    `;
+    </div>
+    <p class="form-help">
+      Error real = |resultado numérico − valor exacto|.
+      Simpson y Gauss-Legendre son significativamente más precisos que
+      el Trapecio con el mismo número de evaluaciones.
+    </p>
+  `;
+}
 
-    contenedor.querySelectorAll('input[data-index]').forEach(inp => {
-      inp.addEventListener('change', e => {
-        const idx   = parseInt(e.target.dataset.index, 10);
-        const campo = e.target.dataset.campo;
-        filasManual[idx][campo] = parseFloat(e.target.value) || 0;
-      });
-    });
-  }
+/**
+ * Tabla detallada de subintervalos de un método compuesto.
+ * Muestra máximo 30 filas.
+ * @param {Object[]} iteraciones
+ * @param {string}   metodo - 'trapecio' | 'simpson'
+ * @returns {string}
+ */
+function htmlTablaIteraciones(iteraciones, metodo) {
+  if (!iteraciones?.length)
+    return '<p class="form-help">Sin detalle de subintervalos.</p>';
 
-  // ─── Parámetros dinámicos del modelo ────────────────────────
-  function _renderizarParamsModelo(modeloKey) {
-    const modelo     = MODELOS_TASA[modeloKey];
-    const contenedor = document.getElementById('contenedor-params-modelo');
-    const tabManual  = document.getElementById('contenedor-tabla-manual');
-    const descModelo = document.getElementById('desc-modelo');
+  const mostrar  = iteraciones.slice(0, 30);
+  const truncado = iteraciones.length > 30;
 
-    if (descModelo) descModelo.textContent = modelo.descripcion;
-
-    // Mostrar/ocultar tabla manual
-    if (tabManual) tabManual.hidden = modeloKey !== 'personalizada';
-    if (modeloKey === 'personalizada') _renderizarTablaManual();
-
-    if (!contenedor) return;
-
-    if (!modelo.params || modelo.params.length === 0) {
-      contenedor.innerHTML = '';
-      return;
-    }
-
-    contenedor.innerHTML = `
-      <div class="form-row form-row--3-col" style="margin-top:1rem;">
-        ${modelo.params.map(p => `
-          <div class="form-group">
-            <label class="form-label" for="${p.id}">${p.label}</label>
-            <input
-              class="form-input"
-              type="number"
-              id="${p.id}"
-              value="${p.valor}"
-              min="${p.min}"
-              step="${p.step}"
-            />
-          </div>
-        `).join('')}
-      </div>
-    `;
-  }
-
-  // ─── Registro de eventos ─────────────────────────────────────
-  function _registrarEventos() {
-    document.getElementById('modelo-tasa')
-      ?.addEventListener('change', e => _renderizarParamsModelo(e.target.value));
-
-    document.getElementById('btn-integrar-d')
-      ?.addEventListener('click', _manejarCalculo);
-
-    document.getElementById('btn-reset-d')
-      ?.addEventListener('click', _restablecerTodo);
-
-    document.getElementById('btn-agregar-fila-d')
-      ?.addEventListener('click', () => {
-        const ultimoT = filasManual.length > 0
-          ? filasManual[filasManual.length - 1].t + 5
-          : 0;
-        filasManual.push({ t: ultimoT, ft: 0 });
-        _renderizarTablaManual();
-      });
-
-    document.getElementById('btn-quitar-fila-d')
-      ?.addEventListener('click', () => {
-        if (filasManual.length <= 3) {
-          mostrarNotificacion('Mínimo 3 puntos requeridos', 'warning');
-          return;
-        }
-        filasManual.pop();
-        _renderizarTablaManual();
-      });
-  }
-
-  // ─── Manejador principal ─────────────────────────────────────
-  function _manejarCalculo() {
-    limpiarErrores(['error-n', 'error-t-inicio', 'error-t-fin', 'error-general-d']);
-
-    const config = _leerYValidarConfig();
-    if (!config) return;
-
-    const resultados = _ejecutarIntegraciones(config);
-    _renderizarResultados(config, resultados);
-
-    const divRes = document.getElementById('resultados-d');
-    if (divRes) {
-      divRes.hidden = false;
-      divRes.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-
-    mostrarNotificacion('Cálculo de costo acumulado completado', 'success');
-  }
-
-  // ─── Lectura y validación de configuración ───────────────────
-  function _leerYValidarConfig() {
-    const modeloKey = document.getElementById('modelo-tasa').value;
-    const modelo    = MODELOS_TASA[modeloKey];
-    let   n         = parseInt(document.getElementById('n-subintervalos').value, 10);
-    const a         = parseFloat(document.getElementById('t-inicio').value);
-    const b         = parseFloat(document.getElementById('t-fin').value);
-    let   valido    = true;
-
-    if (isNaN(a) || a < 0) {
-      mostrarErrores({ 'error-t-inicio': 'El día inicial debe ser un número no negativo.' });
-      valido = false;
-    }
-    if (isNaN(b) || b <= a) {
-      mostrarErrores({ 'error-t-fin': 'El día final debe ser mayor que el día inicial.' });
-      valido = false;
-    }
-    if (isNaN(n) || n < 2) {
-      mostrarErrores({ 'error-n': 'El número de subintervalos debe ser al menos 2.' });
-      valido = false;
-    }
-    if (!valido) return null;
-
-    // Ajustar n para que sea múltiplo de 6 (compatible con Simpson 1/3 y 3/8)
-    if (n % 6 !== 0) {
-      n = Math.ceil(n / 6) * 6;
-      mostrarNotificacion(`n ajustado a ${n} (múltiplo de 6 para compatibilidad con ambas reglas de Simpson)`, 'info');
-    }
-
-    // Leer parámetros del modelo
-    let params = {};
-    if (modeloKey !== 'personalizada') {
-      const letras = ['a', 'b', 'c', 'd'];
-      modelo.params.forEach((p, i) => {
-        const val = parseFloat(document.getElementById(p.id)?.value);
-        if (isNaN(val)) {
-          mostrarErrores({ 'error-general-d': `Parámetro "${p.label}" inválido.` });
-          valido = false;
-        }
-        params[letras[i]] = val;
-      });
-    }
-
-    if (!valido) return null;
-
-    // Para datos manuales, leer y validar tabla
-    let datosManual = null;
-    if (modeloKey === 'personalizada') {
-      // Actualizar desde inputs
-      document.querySelectorAll('#tabla-manual-d input[data-index]').forEach(inp => {
-        const idx   = parseInt(inp.dataset.index, 10);
-        const campo = inp.dataset.campo;
-        filasManual[idx][campo] = parseFloat(inp.value) || 0;
-      });
-
-      const ts = filasManual.map(f => f.t);
-      const ys = filasManual.map(f => f.ft);
-
-      for (let i = 1; i < ts.length; i++) {
-        if (ts[i] <= ts[i - 1]) {
-          mostrarErrores({ 'error-general-d': `Los días deben ser estrictamente crecientes. Error en fila ${i + 1}.` });
-          return null;
-        }
-      }
-      if (ts.length < 3) {
-        mostrarErrores({ 'error-general-d': 'Se necesitan al menos 3 puntos.' });
-        return null;
-      }
-      datosManual = { ts, ys };
-      n = ts.length - 1;
-    }
-
-    // Función f(t) según modelo
-    const f = modeloKey !== 'personalizada'
-      ? (t) => Math.max(0, modelo.fn(t, params))
-      : null;
-
-    return { modeloKey, modelo, n, a, b, params, f, datosManual };
-  }
-
-  // ─── Ejecución de las integraciones ─────────────────────────
-  function _ejecutarIntegraciones({ modeloKey, modelo, n, a, b, f, datosManual }) {
-    const h = (b - a) / n;
-
-    // Generar nodos uniformes
-    const ts = datosManual
-      ? datosManual.ts
-      : Array.from({ length: n + 1 }, (_, i) => a + i * h);
-    const ys = datosManual
-      ? datosManual.ys
-      : ts.map(t => f(t));
-
-    // Métodos de integración total
-    const resTrapecio  = trapecio(ts, ys);
-    const resSimpson13 = simpson13(ts, ys);
-    const resSimpson38 = n % 3 === 0 ? simpson38(ts, ys) : null;
-
-    // Solución analítica (solo para modelos conocidos, no personalizada)
-    const analitica = _solucionAnalitica(modeloKey, a, b, f, modelo);
-
-    // Referencia: analítica si existe, sino Simpson 1/3 con n×10
-    const referencia = analitica !== null
-      ? analitica
-      : (() => {
-          const nRef = n * 10;
-          const hRef = (b - a) / nRef;
-          const tsRef = Array.from({ length: nRef + 1 }, (_, i) => a + i * hRef);
-          const ysRef = tsRef.map(t => f(t));
-          return simpson13(tsRef, ysRef);
-        })();
-
-    // Cálculo de errores relativos (%)
-    const errorTrapecio  = referencia > 1e-10
-      ? Math.abs((resTrapecio  - referencia) / referencia * 100)
-      : 0;
-    const errorSimpson13 = referencia > 1e-10
-      ? Math.abs((resSimpson13 - referencia) / referencia * 100)
-      : 0;
-    const errorSimpson38 = resSimpson38 !== null && referencia > 1e-10
-      ? Math.abs((resSimpson38 - referencia) / referencia * 100)
-      : null;
-
-    // Curva de tasa para graficar (200 puntos densos)
-    const tsDensos = datosManual
-      ? ts
-      : Array.from({ length: 200 }, (_, i) => a + i * (b - a) / 199);
-    const ysDensos = datosManual
-      ? ys
-      : tsDensos.map(t => f(t));
-
-    // Costo acumulado (integral parcial) — para gráfico
-    const acumuladoTrapecio  = _integralAcumulada(ts, ys, 'trapecio');
-    const acumuladoSimpson13 = _integralAcumulada(ts, ys, 'simpson13');
-
-    // Análisis de convergencia
-    const convergencia = datosManual ? null : _analizarConvergencia(a, b, f, referencia);
-
-    return {
-      ts, ys, tsDensos, ysDensos,
-      resTrapecio, resSimpson13, resSimpson38,
-      analitica, referencia,
-      errorTrapecio, errorSimpson13, errorSimpson38,
-      acumuladoTrapecio, acumuladoSimpson13,
-      convergencia,
-      h, n
-    };
-  }
-
-  // ─── Solución analítica por modelo ───────────────────────────
-  function _solucionAnalitica(modeloKey, a, b, f, modelo) {
-    // Solo para los modelos con antiderivada conocida
-    switch (modeloKey) {
-      case 'lineal':
-        // ∫(a·t + b)dt = a·t²/2 + b·t
-        return null; // se calcula abajo con params
-      default:
-        return null;
-    }
-    // Nota: podría expandirse para cada caso con los parámetros
-  }
-
-  // ─── Integral acumulada (parcial) para graficar ──────────────
-  function _integralAcumulada(ts, ys, metodo) {
-    const resultado = [{ t: ts[0], F: 0 }];
-    let acum = 0;
-
-    for (let i = 1; i < ts.length; i++) {
-      const dt = ts[i] - ts[i - 1];
-      let area = 0;
-
-      if (metodo === 'trapecio') {
-        area = (ys[i - 1] + ys[i]) / 2 * dt;
-      } else {
-        // simpson13 por tramos (si i es par desde inicio)
-        if (i >= 2 && (i % 2 === 0)) {
-          const h2 = (ts[i] - ts[i - 2]) / 2;
-          area = h2 / 3 * (ys[i - 2] + 4 * ys[i - 1] + ys[i]);
-          // Restar lo que ya se sumó en i-1 (trapecio provisional)
-          acum = resultado[i - 2].F + area;
-          resultado.push({ t: ts[i], F: acum });
-          continue;
-        } else {
-          area = (ys[i - 1] + ys[i]) / 2 * dt; // trapecio provisional
-        }
-      }
-
-      acum += area;
-      resultado.push({ t: ts[i], F: acum });
-    }
-
-    return resultado;
-  }
-
-  // ─── Análisis de convergencia ────────────────────────────────
-  function _analizarConvergencia(a, b, f, referencia) {
-    const valores_n = [6, 12, 30, 60, 120, 300, 600];
-    return valores_n.map(n => {
-      const h  = (b - a) / n;
-      const ts = Array.from({ length: n + 1 }, (_, i) => a + i * h);
-      const ys = ts.map(t => f(t));
-
-      const vTrap = trapecio(ts, ys);
-      const vS13  = simpson13(ts, ys);
-      const vS38  = n % 3 === 0 ? simpson38(ts, ys) : null;
-
-      const errTrap = referencia > 1e-10 ? Math.abs((vTrap - referencia) / referencia * 100) : 0;
-      const errS13  = referencia > 1e-10 ? Math.abs((vS13  - referencia) / referencia * 100) : 0;
-      const errS38  = vS38 !== null && referencia > 1e-10
-        ? Math.abs((vS38 - referencia) / referencia * 100)
-        : null;
-
-      return { n, h: parseFloat(h.toFixed(6)), vTrap, vS13, vS38, errTrap, errS13, errS38 };
-    });
-  }
-
-  // ─── Renderizado de resultados ───────────────────────────────
-  function _renderizarResultados(config, resultados) {
-    _renderizarResultadoPrincipal(config, resultados);
-    _renderizarMetricas(config, resultados);
-    _renderizarGraficoTasa(config, resultados);
-    _renderizarGraficoAcumulado(config, resultados);
-    _renderizarTablaDetallada(config, resultados);
-    _renderizarGraficoError(config, resultados);
-    if (resultados.convergencia) _renderizarTablaConvergencia(resultados.convergencia);
-    _renderizarInterpretacion(config, resultados);
-  }
-
-  // ─── Resultado principal destacado ───────────────────────────
-  function _renderizarResultadoPrincipal({ a, b }, { resTrapecio, resSimpson13, resSimpson38, analitica, referencia }) {
-    const contenedor = document.getElementById('resultado-principal-d');
-    if (!contenedor) return;
-
-    const mejor = resSimpson13;
-
-    contenedor.innerHTML = `
-      <div class="grid grid--3-col" style="margin-bottom:1rem;">
-        <div style="text-align:center; padding:1rem;">
-          <p class="form-help" style="margin:0 0 0.25rem;">Trapecio</p>
-          <strong style="font-size:1.5rem;">${resTrapecio.toFixed(4)}</strong>
-          <p class="form-help" style="margin:0.25rem 0 0;">M Bs</p>
-        </div>
-        <div style="text-align:center; padding:1rem; border-left:2px solid var(--color-secondary,#6C8C74); border-right:2px solid var(--color-secondary,#6C8C74);">
-          <p class="form-help" style="margin:0 0 0.25rem;">Simpson 1/3 ✓ Recomendado</p>
-          <strong style="font-size:1.8rem; color:var(--color-primary,#3E594F);">
-            ${resSimpson13.toFixed(4)}
-          </strong>
-          <p class="form-help" style="margin:0.25rem 0 0;">M Bs</p>
-        </div>
-        <div style="text-align:center; padding:1rem;">
-          <p class="form-help" style="margin:0 0 0.25rem;">Simpson 3/8</p>
-          <strong style="font-size:1.5rem;">
-            ${resSimpson38 !== null ? resSimpson38.toFixed(4) : 'N/A'}
-          </strong>
-          <p class="form-help" style="margin:0.25rem 0 0;">M Bs</p>
-        </div>
-      </div>
-      <p style="text-align:center;" class="form-help">
-        Período de crisis: días ${a} – ${b} &nbsp;|&nbsp;
-        ${analitica !== null
-          ? `Solución exacta: <strong>${analitica.toFixed(4)}</strong> M Bs`
-          : `Referencia (Simpson 1/3, n×10): <strong>${referencia.toFixed(6)}</strong> M Bs`}
-      </p>
-    `;
-  }
-
-  // ─── Métricas ────────────────────────────────────────────────
-  function _renderizarMetricas({ n, h }, { errorTrapecio, errorSimpson13, errorSimpson38, resSimpson13 }) {
-    const contenedor = document.getElementById('metricas-d');
-    if (!contenedor) return;
-
-    const metricas = [
-      {
-        label: 'Subintervalos n',
-        valor: `${n} (h = ${parseFloat(h.toFixed(4))} días)`,
-        clase: 'info'
-      },
-      {
-        label: 'Error Trapecio',
-        valor: `${errorTrapecio.toFixed(6)}%`,
-        clase: errorTrapecio > 1 ? 'alert' : 'success'
-      },
-      {
-        label: 'Error Simpson 1/3',
-        valor: `${errorSimpson13.toFixed(8)}%`,
-        clase: errorSimpson13 > 0.01 ? 'alert' : 'success'
-      },
-      {
-        label: 'Error Simpson 3/8',
-        valor: errorSimpson38 !== null ? `${errorSimpson38.toFixed(8)}%` : 'N/A',
-        clase: (errorSimpson38 !== null && errorSimpson38 > 0.01) ? 'alert' : 'success'
-      }
-    ];
-
-    contenedor.innerHTML = metricas.map(m => `
-      <div class="card card--${m.clase}" style="text-align:center; padding:1rem;">
-        <p class="form-help" style="margin:0 0 0.25rem;">${m.label}</p>
-        <strong style="font-size:1.1rem;">${m.valor}</strong>
-      </div>
+  if (metodo === 'trapecio') {
+    const filas = mostrar.map(it => `
+      <tr>
+        <td class="table__cell--number">${it.tramo}</td>
+        <td class="table__cell--number">${it.xi.toFixed(4)}</td>
+        <td class="table__cell--number">${it.xi1.toFixed(4)}</td>
+        <td class="table__cell--number">${it.fxi.toFixed(4)}</td>
+        <td class="table__cell--number">${it.fxi1.toFixed(4)}</td>
+        <td class="table__cell--number table__cell--highlight">${it.area.toFixed(6)}</td>
+      </tr>
     `).join('');
-  }
-
-  // ─── Gráfico: tasa de gasto ──────────────────────────────────
-  function _renderizarGraficoTasa({ a, b }, { tsDensos, ysDensos, ts, ys }) {
-    const canvas = document.getElementById(CHART_TASA_ID);
-    if (!canvas) return;
-    if (chartTasa) { chartTasa.destroy(); chartTasa = null; }
-
-    chartTasa = renderizarGrafico(CHART_TASA_ID, {
-      type: 'line',
-      data: {
-        datasets: [
-          {
-            label: 'Tasa de gasto f(t)',
-            data: tsDensos.map((t, i) => ({ x: t, y: parseFloat(ysDensos[i].toFixed(4)) })),
-            borderColor: '#F29966',
-            backgroundColor: 'rgba(242,153,102,0.15)',
-            borderWidth: 2.5,
-            pointRadius: 0,
-            fill: true,
-            tension: 0.3
-          },
-          {
-            label: 'Puntos de integración',
-            data: ts.map((t, i) => ({ x: t, y: parseFloat(ys[i].toFixed(4)) })),
-            type: 'scatter',
-            backgroundColor: '#3E594F',
-            borderColor: '#3E594F',
-            pointRadius: 4,
-            showLine: false
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        parsing: false,
-        plugins: { legend: { position: 'top' } },
-        scales: {
-          x: { type: 'linear', title: { display: true, text: 'Día de la crisis' } },
-          y: { title: { display: true, text: 'Tasa de gasto [M Bs/día]' }, beginAtZero: true }
-        }
-      }
-    });
-  }
-
-  // ─── Gráfico: costo acumulado ────────────────────────────────
-  function _renderizarGraficoAcumulado(config, { acumuladoTrapecio, acumuladoSimpson13 }) {
-    const canvas = document.getElementById(CHART_ACUM_ID);
-    if (!canvas) return;
-    if (chartAcum) { chartAcum.destroy(); chartAcum = null; }
-
-    chartAcum = renderizarGrafico(CHART_ACUM_ID, {
-      type: 'line',
-      data: {
-        datasets: [
-          {
-            label: 'Costo acumulado (Simpson 1/3)',
-            data: acumuladoSimpson13.map(p => ({ x: p.t, y: parseFloat(p.F.toFixed(4)) })),
-            borderColor: '#3E594F',
-            backgroundColor: 'rgba(62,89,79,0.08)',
-            borderWidth: 2.5,
-            pointRadius: 0,
-            fill: true,
-            tension: 0.2
-          },
-          {
-            label: 'Costo acumulado (Trapecio)',
-            data: acumuladoTrapecio.map(p => ({ x: p.t, y: parseFloat(p.F.toFixed(4)) })),
-            borderColor: '#D97059',
-            backgroundColor: 'transparent',
-            borderWidth: 1.5,
-            borderDash: [5, 3],
-            pointRadius: 0,
-            fill: false,
-            tension: 0.2
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        parsing: false,
-        plugins: { legend: { position: 'top' } },
-        scales: {
-          x: { type: 'linear', title: { display: true, text: 'Día' } },
-          y: { title: { display: true, text: 'Costo acumulado [M Bs]' }, beginAtZero: true }
-        }
-      }
-    });
-  }
-
-  // ─── Tabla detallada ─────────────────────────────────────────
-  function _renderizarTablaDetallada({ n }, { ts, ys, acumuladoTrapecio, acumuladoSimpson13 }) {
-    const contenedor = document.getElementById('tabla-integracion-d');
-    if (!contenedor) return;
-
-    // Mostrar submuestra: ~12 puntos distribuidos uniformemente
-    const paso = Math.max(1, Math.floor(n / 12));
-    const indices = [];
-    for (let i = 0; i <= n; i += paso) indices.push(i);
-    if (indices[indices.length - 1] !== n) indices.push(n);
-
-    const filas = indices.map(i => ({
-      'Día t':            ts[i] !== undefined ? ts[i].toFixed(4) : '—',
-      'f(t) [M Bs/día]':  ys[i] !== undefined ? ys[i].toFixed(6) : '—',
-      'F(t) Trapecio':    acumuladoTrapecio[i]  ? acumuladoTrapecio[i].F.toFixed(4)  : '—',
-      'F(t) Simpson 1/3': acumuladoSimpson13[i] ? acumuladoSimpson13[i].F.toFixed(4) : '—',
-      'Diferencia':       (acumuladoTrapecio[i] && acumuladoSimpson13[i])
-        ? Math.abs(acumuladoTrapecio[i].F - acumuladoSimpson13[i].F).toFixed(6)
-        : '—'
-    }));
-
-    renderizarTabla('tabla-integracion-d', {
-      columnas: ['Día t', 'f(t) [M Bs/día]', 'F(t) Trapecio', 'F(t) Simpson 1/3', 'Diferencia'],
-      filas,
-      columnasNumericas: ['f(t) [M Bs/día]', 'F(t) Trapecio', 'F(t) Simpson 1/3', 'Diferencia'],
-      resaltarUltimaFila: true
-    });
-  }
-
-  // ─── Gráfico de error relativo ───────────────────────────────
-  function _renderizarGraficoError({ a, b, f, datosManual }, { errorTrapecio, errorSimpson13, errorSimpson38, referencia, n }) {
-    const canvas = document.getElementById(CHART_ERROR_ID);
-    const nota   = document.getElementById('nota-referencia');
-    if (!canvas) return;
-    if (chartError) { chartError.destroy(); chartError = null; }
-
-    if (nota) {
-      nota.textContent = datosManual
-        ? 'Referencia: Simpson 1/3 con los mismos datos. Los errores son respecto a esta estimación.'
-        : `Referencia: Simpson 1/3 con n×10 = ${n * 10} subintervalos (alta precisión).`;
-    }
-
-    const labels  = ['Trapecio', 'Simpson 1/3', 'Simpson 3/8'];
-    const errores = [
-      errorTrapecio,
-      errorSimpson13,
-      errorSimpson38 !== null ? errorSimpson38 : 0
-    ];
-    const colores = ['#D97059', '#3E594F', '#6C8C74'];
-
-    chartError = renderizarGrafico(CHART_ERROR_ID, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          label: 'Error relativo (%)',
-          data: errores.map(e => parseFloat(e.toFixed(8))),
-          backgroundColor: colores,
-          borderColor: colores,
-          borderWidth: 1
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: ctx => `Error: ${ctx.parsed.y.toFixed(8)}%`
-            }
-          }
-        },
-        scales: {
-          y: {
-            title: { display: true, text: 'Error relativo (%)' },
-            beginAtZero: true
-          }
-        }
-      }
-    });
-  }
-
-  // ─── Tabla de convergencia ───────────────────────────────────
-  function _renderizarTablaConvergencia(convergencia) {
-    const contenedor = document.getElementById('tabla-convergencia-d');
-    if (!contenedor) return;
-
-    const filas = convergencia.map(row => ({
-      'n':              String(row.n),
-      'h':              row.h.toFixed(6),
-      'Trapecio':       row.vTrap.toFixed(6),
-      'Error Trap (%)': row.errTrap.toFixed(8),
-      'Simpson 1/3':    row.vS13.toFixed(6),
-      'Error S1/3 (%)': row.errS13.toFixed(10),
-      'Simpson 3/8':    row.vS38 !== null ? row.vS38.toFixed(6) : 'N/A',
-      'Error S3/8 (%)': row.errS38 !== null ? row.errS38.toFixed(10) : 'N/A'
-    }));
-
-    renderizarTabla('tabla-convergencia-d', {
-      columnas: ['n', 'h', 'Trapecio', 'Error Trap (%)', 'Simpson 1/3', 'Error S1/3 (%)', 'Simpson 3/8', 'Error S3/8 (%)'],
-      filas,
-      columnasNumericas: ['Trapecio', 'Error Trap (%)', 'Simpson 1/3', 'Error S1/3 (%)', 'Simpson 3/8', 'Error S3/8 (%)']
-    });
-  }
-
-  // ─── Interpretación económica ────────────────────────────────
-  function _renderizarInterpretacion(
-    { modeloKey, modelo, a, b, n },
-    { resTrapecio, resSimpson13, resSimpson38, errorTrapecio, errorSimpson13, referenciaEsAnalitica, convergencia }
-  ) {
-    const contenedor = document.getElementById('interpretacion-d');
-    if (!contenedor) return;
-
-    const duracion  = b - a;
-    const promDiario = resSimpson13 / duracion;
-    const mejorMetodo = errorSimpson13 <= (errorTrapecio ?? Infinity)
-      ? 'Simpson 1/3'
-      : 'Trapecio';
-
-    // Recomendación según orden de convergencia
-    const ordenTrapecio  = 'O(h²)';
-    const ordenSimpson   = 'O(h⁴)';
-
-    const advertenciaN = n < 30
-      ? `<div class="alert alert--warning">
-          ⚠ Con n = ${n} subintervalos, la precisión puede ser limitada.
-          Se recomienda n ≥ 30 para resultados confiables en análisis de política pública.
-        </div>`
-      : '';
-
-    contenedor.innerHTML = `
-      ${advertenciaN}
-
-      <h3>Gasto total durante la crisis</h3>
-      <p>
-        Integrando la tasa de gasto desde el día <strong>${a}</strong> hasta el
-        día <strong>${b}</strong> (${duracion} días de crisis), el costo total
-        estimado por <strong>Simpson 1/3</strong> es
-        <strong>${resSimpson13.toFixed(4)} millones de Bs</strong>,
-        con un gasto diario promedio de <strong>${promDiario.toFixed(4)} M Bs/día</strong>.
-      </p>
-
-      <h3>Comparación de métodos de integración numérica</h3>
-      <ul>
-        <li>
-          <strong>Regla del Trapecio (${ordenTrapecio}):</strong> Aproxima cada
-          subintervalo como un trapecio. Simple y robusto, pero converge lentamente.
-          Error relativo: <code>${errorTrapecio.toFixed(6)}%</code>.
-        </li>
-        <li>
-          <strong>Simpson 1/3 (${ordenSimpson}):</strong> Usa parabolas por pares de
-          subintervalos (n par). Cuatro órdenes de magnitud más preciso que el Trapecio
-          para funciones suaves. Error: <code>${errorSimpson13.toFixed(8)}%</code>.
-          <strong>Método recomendado.</strong>
-        </li>
-        <li>
-          <strong>Simpson 3/8 (${ordenSimpson}):</strong> Usa polinomios cúbicos por
-          triples de subintervalos (n múltiplo de 3). Precisión similar a Simpson 1/3,
-          útil cuando n es múltiplo de 3 pero no de 2.
-          ${resSimpson38 !== null
-            ? `Resultado: <code>${resSimpson38.toFixed(6)}</code>`
-            : 'No aplicable para el n seleccionado.'}
-        </li>
-      </ul>
-
-      <h3>Implicaciones para la planificación de emergencias</h3>
-      <ul>
-        <li>
-          El modelo <strong>${modelo.nombre}</strong> (${modelo.formula}) captura la
-          dinámica de gasto bajo el supuesto de ${modelo.descripcion.toLowerCase()}.
-        </li>
-        <li>
-          Para presupuestación de emergencia, usar <strong>Simpson 1/3 con n ≥ 60</strong>
-          garantiza un error por debajo del 0.001%, suficiente para decisiones de política
-          de millones de bolivianos.
-        </li>
-        <li>
-          El gasto diario promedio de <strong>${promDiario.toFixed(2)} M Bs/día</strong>
-          permite estimar la reserva de emergencia necesaria para extender la respuesta
-          a una crisis de duración diferente.
-        </li>
-        ${convergencia
-          ? `<li>
-              El análisis de convergencia confirma que Simpson 1/3 alcanza error
-              < 0.0001% con n = ${convergencia.find(r => r.errS13 < 0.0001)?.n ?? '≥ 300'},
-              mientras Trapecio requiere n mucho mayor para la misma precisión.
-            </li>`
-          : ''}
-      </ul>
+    return `
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Tramo</th><th>xᵢ</th><th>xᵢ₊₁</th>
+              <th>f(xᵢ)</th><th>f(xᵢ₊₁)</th><th>Área tramo</th>
+            </tr>
+          </thead>
+          <tbody>${filas}</tbody>
+        </table>
+      </div>
+      ${truncado ? `<p class="form-help">Mostrando 30 de ${iteraciones.length} tramos.</p>` : ''}
     `;
   }
 
-  // ─── Restablecer ─────────────────────────────────────────────
-  function _restablecerTodo() {
-    limpiarErrores(['error-n', 'error-t-inicio', 'error-t-fin', 'error-general-d']);
+  // Simpson
+  const filas = mostrar.map(it => `
+    <tr>
+      <td class="table__cell--number">${it.tramo}</td>
+      <td class="table__cell--number">${it.xi.toFixed(4)}</td>
+      <td class="table__cell--number">${it.xm.toFixed(4)}</td>
+      <td class="table__cell--number">${it.xi2.toFixed(4)}</td>
+      <td class="table__cell--number">${it.fxi.toFixed(4)}</td>
+      <td class="table__cell--number">${it.fxm.toFixed(4)}</td>
+      <td class="table__cell--number">${it.fxi2.toFixed(4)}</td>
+      <td class="table__cell--number table__cell--highlight">${it.area.toFixed(6)}</td>
+    </tr>
+  `).join('');
+  return `
+    <div style="overflow-x: auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>Tramo</th><th>xᵢ</th><th>xₘ</th><th>xᵢ₊₂</th>
+            <th>f(xᵢ)</th><th>f(xₘ)</th><th>f(xᵢ₊₂)</th><th>Área tramo</th>
+          </tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
+    ${truncado ? `<p class="form-help">Mostrando 30 de ${iteraciones.length} tramos.</p>` : ''}
+  `;
+}
 
-    const modeloSelect = document.getElementById('modelo-tasa');
-    if (modeloSelect) { modeloSelect.value = 'lineal'; _renderizarParamsModelo('lineal'); }
+/**
+ * Tabla de evaluaciones de Gauss-Legendre.
+ * @param {Object[]} iteraciones
+ * @returns {string}
+ */
+function htmlTablaGauss(iteraciones) {
+  if (!iteraciones?.length) return '';
+  const filas = iteraciones.map(it => `
+    <tr>
+      <td class="table__cell--number">${it.i}</td>
+      <td class="table__cell--number">${it.nodo_t.toFixed(8)}</td>
+      <td class="table__cell--number">${it.x.toFixed(6)}</td>
+      <td class="table__cell--number">${it.fx.toFixed(6)}</td>
+      <td class="table__cell--number">${it.peso.toFixed(8)}</td>
+      <td class="table__cell--number table__cell--highlight">
+        ${it.contribucion.toFixed(6)}
+      </td>
+    </tr>
+  `).join('');
+  return `
+    <div style="overflow-x: auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Nodo tᵢ ∈ [-1,1]</th><th>x transformado</th>
+            <th>f(x)</th><th>Peso wᵢ</th><th>Contribución wᵢ·f(x)·(b-a)/2</th>
+          </tr>
+        </thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
+    <p class="form-help">
+      Gauss-Legendre solo necesita 5 evaluaciones de f y es exacto para
+      polinomios de grado ≤ 9.
+    </p>
+  `;
+}
 
-    document.getElementById('n-subintervalos') && (document.getElementById('n-subintervalos').value = '100');
-    document.getElementById('t-inicio')        && (document.getElementById('t-inicio').value = '0');
-    document.getElementById('t-fin')           && (document.getElementById('t-fin').value = '30');
-    document.getElementById('x-eval')          && (document.getElementById('x-eval').value = '');
+/**
+ * HTML de la interpretación automática de resultados.
+ * @param {Object}      rSimp       - resultado Simpson (más preciso)
+ * @param {Object}      rTrap       - resultado Trapecio
+ * @param {Object}      rGauss      - resultado Gauss
+ * @param {Function|null} C         - primitiva analítica
+ * @param {number}      a
+ * @param {number}      b
+ * @param {string}      descripcion - modelo usado
+ * @returns {string}
+ */
+function htmlInterpretacion(rSimp, rTrap, rGauss, C, a, b, descripcion) {
+  // Mejor estimación: Simpson si convergió, sino Gauss
+  const rPrincipal = !rSimp.error ? rSimp : !rGauss.error ? rGauss : rTrap;
+  const costoTotal = rPrincipal.integral;
+  const dias = b - a;
+  const costoDiario = costoTotal / dias;
+  const exacto = C ? C(b) - C(a) : null;
 
-    filasManual = [
-      { t: 0,  ft: 10 }, { t: 5,  ft: 25 }, { t: 10, ft: 45 },
-      { t: 15, ft: 80 }, { t: 20, ft: 60 }, { t: 25, ft: 40 }, { t: 30, ft: 30 }
-    ];
+  // Comparar eficiencia: error por evaluación
+  const errorTrap  = exacto !== null ? Math.abs(rTrap.integral  - exacto) : null;
+  const errorSimp  = exacto !== null ? Math.abs(rSimp.integral  - exacto) : null;
+  const errorGauss = exacto !== null ? Math.abs(rGauss.integral - exacto) : null;
 
-    const divRes = document.getElementById('resultados-d');
-    if (divRes) divRes.hidden = true;
-
-    [chartTasa, chartAcum, chartError].forEach(c => { if (c) { c.destroy(); } });
-    chartTasa = chartAcum = chartError = null;
-
-    mostrarNotificacion('Escenario D restablecido', 'info');
+  let mejorMetodo = 'Simpson 1/3';
+  if (exacto !== null) {
+    if (errorGauss < errorSimp && errorGauss < errorTrap) mejorMetodo = 'Gauss-Legendre';
+    else if (errorSimp <= errorGauss)                      mejorMetodo = 'Simpson 1/3';
   }
 
-  // Exponer al scope global para el router runtime
-  window.renderizarEscenarioD = renderizarEscenarioD;
+  return `
+    <div class="alert alert--warning" role="status" style="font-size:1.05rem;">
+      💰 <strong>Costo total acumulado de la crisis:</strong>
+      <span style="font-size:1.3rem;">
+        $${costoTotal.toLocaleString('es-BO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      </span>
+      en ${dias} días (método: ${rPrincipal.metodo})
+    </div>
 
-})();
+    <div class="card card--escenario-d" style="margin-top: var(--spacing-4);">
+      <div class="card__header">
+        <h3 class="card__title">📊 Análisis del costo de crisis</h3>
+      </div>
+      <div class="card__body">
+
+        <div class="grid grid--auto">
+          <div class="card card--info">
+            <div class="card__body">
+              <strong>Costo total ∫c(t)dt</strong><br>
+              <span style="font-size:1.4rem; color:var(--color-accent-warm);">
+                $${costoTotal.toLocaleString('es-BO', { minimumFractionDigits: 2 })}
+              </span><br>
+              <small>Período: días ${a} – ${b}</small>
+            </div>
+          </div>
+
+          <div class="card card--info">
+            <div class="card__body">
+              <strong>Costo promedio diario</strong><br>
+              <span style="font-size:1.4rem; color:var(--color-primary);">
+                $${costoDiario.toLocaleString('es-BO', { minimumFractionDigits: 2 })}
+              </span><br>
+              <small>por día de crisis</small>
+            </div>
+          </div>
+
+          ${exacto !== null ? `
+            <div class="card card--info">
+              <div class="card__body">
+                <strong>Mejor método numérico</strong><br>
+                <span style="font-size:1.1rem; color:var(--color-secondary);">
+                  ${mejorMetodo}
+                </span><br>
+                <small>
+                  Error: ${(errorGauss ?? errorSimp ?? 0).toExponential(3)}
+                </small>
+              </div>
+            </div>
+          ` : ''}
+        </div>
+
+        <p style="margin-top: var(--spacing-4);">
+          <strong>Interpretación para gestión de crisis:</strong>
+          Con el modelo <em>${descripcion}</em>, las medidas de emergencia
+          durante los ${dias} días costarán aproximadamente
+          <strong>$${costoTotal.toLocaleString('es-BO', { minimumFractionDigits: 2 })}</strong>.
+          Esto equivale a un promedio de
+          <strong>$${costoDiario.toFixed(2)} por día</strong>.
+          ${rPrincipal === rSimp && !rSimp.error
+            ? `Simpson 1/3 con n=${rSimp.nEvaluaciones - 1} subintervalos
+               ofrece el mejor balance entre precisión (O(h⁴)) y costo computacional.`
+            : `Gauss-Legendre con solo 5 evaluaciones alcanza alta precisión
+               gracias a la ubicación óptima de sus nodos.`
+          }
+        </p>
+
+        ${exacto !== null && errorTrap !== null ? `
+          <p>
+            <strong>Comparación de precisión:</strong>
+            Trapecio: error = ${errorTrap.toExponential(4)} |
+            Simpson: error = ${errorSimp.toExponential(4)} |
+            Gauss-Legendre: error = ${errorGauss.toExponential(4)}.
+            Simpson es ${(errorTrap / (errorSimp + 1e-15)).toFixed(0)}× más preciso
+            que el Trapecio con el mismo número de evaluaciones,
+            lo que demuestra la ventaja de usar métodos de orden superior.
+          </p>
+        ` : ''}
+
+        <p>
+          <strong>Métodos numéricos:</strong>
+          Trapecio O(h²), Simpson 1/3 O(h⁴), Gauss-Legendre exacto para
+          polinomios de grado ≤ 9 con solo 5 puntos. El error del Trapecio
+          involucra f''(ξ), el de Simpson f⁴(ξ).
+        </p>
+
+      </div>
+    </div>
+  `;
+}
+
+// ─────────────────────────────────────────────
+// GRÁFICO
+// ─────────────────────────────────────────────
+
+let chartInstanciaD = null;
+
+/**
+ * Renderiza el gráfico de c(t) con el área bajo la curva sombreada.
+ * @param {string}   canvasId
+ * @param {number[]} xs  - puntos x (del Trapecio, más denso)
+ * @param {number[]} ys  - valores c(xi)
+ * @param {Object[]} puntosGauss - puntos evaluados por Gauss-Legendre
+ */
+function renderizarGrafico(canvasId, xs, ys, puntosGauss) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+
+  if (chartInstanciaD) { chartInstanciaD.destroy(); chartInstanciaD = null; }
+
+  const CFG    = window.APP_CONFIG?.CHART_CONFIG ?? {};
+  const colores = CFG.COLORES ?? {
+    PRIMARY: '#3E594F', ACCENT_WARM: '#F29966', ALERT: '#D97059',
+  };
+  const fondos = CFG.COLORES_FONDO ?? {
+    ACCENT_WARM: 'rgba(242,153,102,0.20)',
+  };
+  const opBase = CFG.OPCIONES_BASE
+    ? JSON.parse(JSON.stringify(CFG.OPCIONES_BASE))
+    : {};
+
+  // Submuestrear a máx 150 puntos para el gráfico
+  const paso    = Math.max(1, Math.floor(xs.length / 150));
+  const indices = [];
+  for (let i = 0; i < xs.length; i += paso) indices.push(i);
+  if (indices.at(-1) !== xs.length - 1) indices.push(xs.length - 1);
+
+  const labels     = indices.map(i => xs[i].toFixed(2));
+  const dataLinea  = indices.map(i => parseFloat(ys[i].toFixed(4)));
+
+  // Puntos de Gauss como dataset separado
+  const dataGauss = xs.map((x, idx) => {
+    const pg = puntosGauss.find(p => Math.abs(p.x - x) < 1e-6);
+    return pg ? pg.fx : null;
+  });
+
+  chartInstanciaD = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label:           'c(t) — Costo marginal',
+          data:            dataLinea,
+          borderColor:     colores.ACCENT_WARM,
+          backgroundColor: fondos.ACCENT_WARM,
+          borderWidth:     2.5,
+          pointRadius:     0,
+          fill:            true,
+          tension:         0.3,
+          order:           2,
+        },
+        {
+          label:           'Nodos Gauss-Legendre',
+          data:            indices.map(i => {
+            const xVal = xs[i];
+            const pg = puntosGauss.find(p => Math.abs(p.x - xVal) < 0.5);
+            return pg ? pg.fx : null;
+          }),
+          borderColor:     colores.ALERT,
+          backgroundColor: colores.ALERT,
+          borderWidth:     0,
+          pointRadius:     7,
+          pointStyle:      'star',
+          showLine:        false,
+          order:           1,
+        },
+      ],
+    },
+    options: {
+      ...opBase,
+      plugins: {
+        ...(opBase.plugins ?? {}),
+        title: {
+          display: true,
+          text:    'Costo marginal c(t) — Área = Costo total acumulado',
+          font:    { size: 14, weight: 'bold' },
+        },
+      },
+      scales: {
+        x: {
+          ...(opBase.scales?.x ?? {}),
+          title: { display: true, text: 'Tiempo (días)' },
+          ticks: { maxTicksLimit: 12, font: { size: 11 } },
+        },
+        y: {
+          ...(opBase.scales?.y ?? {}),
+          title:       { display: true, text: 'Costo marginal c(t) ($/día)' },
+          beginAtZero: false,
+        },
+      },
+    },
+  });
+}
+
+// ─────────────────────────────────────────────
+// MANEJO DEL SELECTOR DE MODELO
+// ─────────────────────────────────────────────
+
+function actualizarVistaModelo() {
+  const modelo = document.getElementById('d-modelo')?.value;
+  document.querySelectorAll('.d-params').forEach(el => { el.hidden = true; });
+  const bloque = document.getElementById(`d-params-${modelo}`);
+  if (bloque) bloque.hidden = false;
+}
+
+// ─────────────────────────────────────────────
+// LECTURA Y VALIDACIÓN DEL FORMULARIO
+// ─────────────────────────────────────────────
+
+/**
+ * Lee todos los parámetros del formulario.
+ * @returns {{ params: Object|null, errores: string[] }}
+ */
+function leerFormulario() {
+  const errores = [];
+  const modelo  = document.getElementById('d-modelo')?.value ?? 'exponencial';
+  const a       = parseFloat(document.getElementById('d-a')?.value);
+  const b       = parseFloat(document.getElementById('d-b')?.value);
+  let   n       = parseInt(document.getElementById('d-n')?.value, 10);
+
+  if (isNaN(a)) errores.push('El tiempo inicial t₀ debe ser un número.');
+  if (isNaN(b)) errores.push('El tiempo final t_fin debe ser un número.');
+  if (!isNaN(a) && !isNaN(b) && a >= b)
+    errores.push('t₀ debe ser menor que t_fin.');
+  if (isNaN(n) || n < 2) errores.push('El número de subintervalos debe ser ≥ 2.');
+  if (n > 10000)         errores.push('Máximo 10.000 subintervalos.');
+  if (n % 2 !== 0) n++;  // Ajustar al siguiente par para Simpson
+
+  // Parámetros del modelo
+  let p = {};
+  if (modelo === 'lineal') {
+    p.a = parseFloat(document.getElementById('d-lin-a')?.value);
+    p.b = parseFloat(document.getElementById('d-lin-b')?.value);
+    if (isNaN(p.a) || isNaN(p.b)) errores.push('Parámetros del modelo lineal inválidos.');
+
+  } else if (modelo === 'exponencial') {
+    p.A = parseFloat(document.getElementById('d-exp-A')?.value);
+    p.k = parseFloat(document.getElementById('d-exp-k')?.value);
+    if (isNaN(p.A) || p.A <= 0) errores.push('A debe ser > 0 en el modelo exponencial.');
+    if (isNaN(p.k))              errores.push('k debe ser un número en el modelo exponencial.');
+
+  } else if (modelo === 'cuadratico') {
+    p.a = parseFloat(document.getElementById('d-cua-a')?.value);
+    p.b = parseFloat(document.getElementById('d-cua-b')?.value);
+    p.c = parseFloat(document.getElementById('d-cua-c')?.value);
+    if ([p.a, p.b, p.c].some(isNaN))
+      errores.push('Todos los coeficientes del modelo cuadrático deben ser números.');
+
+  } else if (modelo === 'sinusoidal') {
+    p.A = parseFloat(document.getElementById('d-sin-A')?.value);
+    p.B = parseFloat(document.getElementById('d-sin-B')?.value);
+    if (isNaN(p.A) || isNaN(p.B))
+      errores.push('Parámetros del modelo sinusoidal inválidos.');
+
+  } else if (modelo === 'personalizado') {
+    p.expresion = document.getElementById('d-per-expr')?.value ?? '';
+    if (!p.expresion.trim())
+      errores.push('Escribe una expresión para el modelo personalizado.');
+  }
+
+  if (errores.length > 0) return { params: null, errores };
+  return { params: { modelo, p, a, b, n }, errores: [] };
+}
+
+/** Muestra errores en el DOM. */
+function mostrarErrores(errores) {
+  const el = document.getElementById('d-errores');
+  if (!el) return;
+  el.innerHTML = errores.length === 0 ? '' : `
+    <div class="alert alert--error" role="alert">
+      <ul style="margin:0; padding-left:var(--spacing-4);">
+        ${errores.map(e => `<li>${e}</li>`).join('')}
+      </ul>
+    </div>
+  `;
+}
+
+// ─────────────────────────────────────────────
+// MANEJADOR PRINCIPAL DE CÁLCULO
+// ─────────────────────────────────────────────
+
+function calcularEscenarioD() {
+  const { params, errores } = leerFormulario();
+  mostrarErrores(errores);
+  if (!params) return;
+
+  const { modelo, p, a, b, n } = params;
+
+  // Construir modelo
+  const resultado = construirModelo(modelo, p);
+  if (resultado.error) { mostrarErrores([resultado.error]); return; }
+  const { f, C, descripcion } = resultado;
+
+  // Ejecutar los tres métodos
+  const rTrap  = trapecio(f, a, b, n);
+  const rSimp  = simpson13(f, a, b, n);
+  const rGauss = gaussLegendre5(f, a, b);
+
+  // Gráfico (usa los puntos del Trapecio como base densa)
+  if (!rTrap.error && rTrap.xs) {
+    renderizarGrafico('d-chart', rTrap.xs, rTrap.ys, rGauss.iteraciones ?? []);
+  }
+
+  // Tabla comparativa
+  const contComp = document.getElementById('d-tabla-comparativa');
+  if (contComp) contComp.innerHTML = htmlTablaComparativa(rTrap, rSimp, rGauss, C, a, b);
+
+  // Tabla Trapecio
+  const contTrap = document.getElementById('d-tabla-trapecio');
+  if (contTrap) contTrap.innerHTML = htmlTablaIteraciones(rTrap.iteraciones, 'trapecio');
+
+  // Tabla Simpson
+  const contSimp = document.getElementById('d-tabla-simpson');
+  if (contSimp) contSimp.innerHTML = htmlTablaIteraciones(rSimp.iteraciones, 'simpson');
+
+  // Tabla Gauss-Legendre
+  const contGauss = document.getElementById('d-tabla-gauss');
+  if (contGauss) contGauss.innerHTML = htmlTablaGauss(rGauss.iteraciones);
+
+  // Interpretación
+  const contInterp = document.getElementById('d-interpretacion');
+  if (contInterp)
+    contInterp.innerHTML = htmlInterpretacion(rSimp, rTrap, rGauss, C, a, b, descripcion);
+
+  // Mostrar resultados
+  const resultados = document.getElementById('d-resultados');
+  if (resultados) resultados.hidden = false;
+}
+
+function limpiarEscenarioD() {
+  document.getElementById('form-escenario-d')?.reset();
+  actualizarVistaModelo();
+
+  const resultados = document.getElementById('d-resultados');
+  if (resultados) resultados.hidden = true;
+
+  const errores = document.getElementById('d-errores');
+  if (errores) errores.innerHTML = '';
+
+  if (chartInstanciaD) { chartInstanciaD.destroy(); chartInstanciaD = null; }
+}
+
+// ─────────────────────────────────────────────
+// REGISTRO DE EVENTOS
+// ─────────────────────────────────────────────
+
+function registrarEventosD() {
+  document.getElementById('d-btn-calcular')
+    ?.addEventListener('click', calcularEscenarioD);
+  document.getElementById('d-btn-limpiar')
+    ?.addEventListener('click', limpiarEscenarioD);
+  document.getElementById('d-modelo')
+    ?.addEventListener('change', actualizarVistaModelo);
+}
+
+// ─────────────────────────────────────────────
+// FUNCIÓN PRINCIPAL DE RENDERIZADO
+// ─────────────────────────────────────────────
+
+function escenarioD() {
+  setTimeout(registrarEventosD, 0);
+
+  return `
+    <section
+      class="seccion-contenido"
+      id="vista-escenario-d"
+      aria-labelledby="titulo-d"
+    >
+
+      <!-- ENCABEZADO -->
+      <div class="seccion-contenido__header">
+        <h1 id="titulo-d">💰 Escenario D: Costo Acumulado de Crisis</h1>
+        <p class="seccion-contenido__subtitulo">
+          Integración numérica aplicada al cálculo del costo total de medidas de emergencia
+        </p>
+      </div>
+
+      <!-- CONTEXTO -->
+      <div class="card card--info" style="margin-bottom: var(--spacing-5);">
+        <div class="card__body">
+          <p>
+            Dado un modelo de costo marginal c(t) ($/día), el costo total de
+            la crisis se obtiene integrando:
+          </p>
+          <p style="text-align:center; font-family:monospace; margin: var(--spacing-2) 0;">
+            C_total = ∫[t₀, t_fin] c(t) dt
+          </p>
+          <p>
+            Se comparan tres métodos numéricos: <strong>Trapecio</strong> (O(h²)),
+            <strong>Simpson 1/3</strong> (O(h⁴)) y
+            <strong>Gauss-Legendre con 5 puntos</strong> (exacto para polinomios
+            de grado ≤ 9). Las estrellas rojas en el gráfico marcan los 5 nodos
+            de Gauss-Legendre.
+          </p>
+        </div>
+      </div>
+
+      <!-- FORMULARIO -->
+      <div class="card" style="margin-bottom: var(--spacing-5);">
+        <div class="card__header">
+          <h2 class="card__title">⚙️ Configuración del modelo de costo</h2>
+        </div>
+        <div class="card__body">
+          <div id="d-errores" role="alert" aria-live="polite"></div>
+          <form id="form-escenario-d" novalidate>
+            ${htmlFormulario()}
+          </form>
+        </div>
+      </div>
+
+      <!-- RESULTADOS -->
+      <div id="d-resultados" hidden>
+
+        <!-- GRÁFICO -->
+        <div class="card" style="margin-bottom: var(--spacing-5);">
+          <div class="card__header">
+            <h2 class="card__title">📈 Costo marginal c(t) — Área bajo la curva</h2>
+          </div>
+          <div class="card__body">
+            <div class="grafico-contenedor" style="height: 360px;">
+              <canvas id="d-chart"
+                aria-label="Gráfico de costo marginal con área sombreada"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- INTERPRETACIÓN -->
+        <div id="d-interpretacion" style="margin-bottom: var(--spacing-5);"></div>
+
+        <!-- TABLA COMPARATIVA -->
+        <div class="card" style="margin-bottom: var(--spacing-5);">
+          <div class="card__header">
+            <h2 class="card__title">⚖️ Comparación de métodos de integración</h2>
+          </div>
+          <div class="card__body" id="d-tabla-comparativa"></div>
+        </div>
+
+        <!-- DETALLE TRAPECIO -->
+        <div class="card" style="margin-bottom: var(--spacing-5);">
+          <div class="card__header">
+            <h2 class="card__title">📋 Subintervalos — Trapecio</h2>
+          </div>
+          <div class="card__body" id="d-tabla-trapecio"></div>
+        </div>
+
+        <!-- DETALLE SIMPSON -->
+        <div class="card" style="margin-bottom: var(--spacing-5);">
+          <div class="card__header">
+            <h2 class="card__title">📋 Subintervalos — Simpson 1/3</h2>
+          </div>
+          <div class="card__body" id="d-tabla-simpson"></div>
+        </div>
+
+        <!-- DETALLE GAUSS-LEGENDRE -->
+        <div class="card">
+          <div class="card__header">
+            <h2 class="card__title">📋 Evaluaciones — Gauss-Legendre (5 puntos)</h2>
+          </div>
+          <div class="card__body" id="d-tabla-gauss"></div>
+        </div>
+
+      </div>
+
+    </section>
+  `;
+}
+
+// ─────────────────────────────────────────────
+// EXPORTACIÓN GLOBAL
+// ─────────────────────────────────────────────
+
+window.escenarioD = escenarioD;
