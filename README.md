@@ -164,15 +164,10 @@ Sin frameworks. Sin dependencias de npm. Sin build step.
 
 | Nombre | Rol |
 |--------|-----|
-| **[Nombre 1]** | Algoritmos matemáticos (core/) + escenarios A, B, C |
-| **[Nombre 2]** | Interfaz (css/ + ui/) + escenarios D, E, F, G |
+| **Samantha Rousse Gironda Mina** | Algoritmos matemáticos (core/) + escenarios A, B, C |
+| **Cristhian Pablo Alvarez Guarachi** | Interfaz (css/ + ui/) + escenarios D, E, F, G |
 
 **Materia**: Métodos Numéricos Aplicados
-**Institución**: [Tu universidad]
-**Período**: 2025
+**Institución**: UMSA
+**Período**: 2026
 
----
-
-## Licencia
-
-MIT — libre para uso académico y personal.
