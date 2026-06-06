@@ -375,13 +375,13 @@ function vista404() {
 function cargarScript(src) {
   return new Promise((resolve, reject) => {
     if (modulosCargados.has(src)) {
-      resolve(); // Ya cargado: no duplicar
+      resolve();
       return;
     }
 
     const script = document.createElement('script');
     script.src = src;
-    script.defer = true;
+    // ← sin defer, sin async
     script.onload = () => {
       modulosCargados.add(src);
       resolve();
@@ -438,19 +438,33 @@ async function navegar(ruta) {
     if (ruta === '#inicio') {
       try {
         await cargarScript('js/escenarios/inicio.js');
-        if (typeof renderizarInicio === 'function') {
-          renderizarInicio();
-          return; // renderizarInicio ya inyecta el HTML directamente
+
+        await cargarDependenciasEscenario(ruta);
+        await cargarScript(rutaModulo);
+
+        // ← agregar estas dos líneas
+        await new Promise(r => setTimeout(r, 0)); // un tick para que el script se ejecute
+
+        const fn = window.renderizarInicio ?? (typeof renderizarInicio !== 'undefined' ? renderizarInicio : null);
+        if (typeof fn === 'function') {
+          renderizar(contenedor, '');
+          fn(contenedor);   // ← pasamos el contenedor siempre
+        } else {
+          html = vistaInicio();
         }
       } catch {
-        html = vistaInicio(); // fallback al HTML básico
+        html = vistaInicio();
       }
+
     } else if (ruta === '#conclusiones') {
       try {
         await cargarScript('js/escenarios/conclusiones.js');
-        if (typeof renderizarConclusiones === 'function') {
-          renderizarConclusiones();
-          return;
+        const fn = window.renderizarConclusiones ?? (typeof renderizarConclusiones !== 'undefined' ? renderizarConclusiones : null);
+        if (typeof fn === 'function') {
+          renderizar(contenedor, '');
+          fn(contenedor);   // ← pasamos el contenedor siempre
+        } else {
+          html = vistaConclusiones();
         }
       } catch {
         html = vistaConclusiones();
@@ -464,13 +478,15 @@ async function navegar(ruta) {
           await cargarDependenciasEscenario(ruta);
           await cargarScript(rutaModulo);
 
-          const clave = ruta.replace('#escenario-', 'escenario').replace(/-(.)/g, (_, c) => c.toUpperCase());
+          const clave = ruta.replace('#escenario-', 'escenario')
+                  .replace(/-(.)/g, (_, c) => c.toUpperCase())
+                  .replace(/escenario(.)/, (_, c) => 'escenario' + c.toUpperCase());
           const claveRender = `renderizar${clave[0].toUpperCase()}${clave.slice(1)}`;
           const renderDirecto = window[claveRender];
           const renderGlobal  = window[clave];
 
           if (typeof renderDirecto === 'function') {
-            renderizar(contenedor, '');           // ← limpiar ANTES
+            renderizar(contenedor, '');
             renderDirecto(contenedor);
           } else if (typeof renderGlobal === 'function') {
             const resultado = renderGlobal();
@@ -482,13 +498,19 @@ async function navegar(ruta) {
           }
 
         } catch (err) {
-          console.error('❌ Error EXACTO cargando escenario:', err);
+          console.error('❌ Error cargando escenario:', err);
           console.error('Stack:', err.stack);
           renderizar(contenedor, vistaEscenarioPlaceholder(ruta));
         }
       } else {
         renderizar(contenedor, vistaEscenarioPlaceholder(ruta));
       }
+    }
+
+    // Si html quedó vacío y el contenedor ya fue poblado directamente,
+    // no sobreescribir. Solo renderizar si html tiene contenido.
+    if (html) {
+      renderizar(contenedor, html);
     }
 
   } catch (error) {
